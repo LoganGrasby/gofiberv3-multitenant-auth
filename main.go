@@ -16,9 +16,37 @@ import (
 	"github.com/logangrasby/gofiberv3-multitenant-auth/auth"
 )
 
+// =============================================================================
+// Custom User Model Example
+// =============================================================================
+// CustomUser demonstrates how to extend the base user model with
+// application-specific fields. Embed auth.BaseUser to inherit all
+// authentication functionality.
+type CustomUser struct {
+	auth.BaseUser
+	OrganizationID uint   `json:"organization_id" gorm:"index"`
+	Department     string `json:"department"`
+	EmployeeID     string `json:"employee_id" gorm:"uniqueIndex"`
+}
+
+// TableName ensures GORM uses the correct table name
+func (CustomUser) TableName() string {
+	return "users"
+}
+
 func main() {
-	// Create the auth service
-	authService, err := auth.New(auth.Config{
+	// ==========================================================================
+	// Option A: Default User Model (simplest)
+	// ==========================================================================
+	// authService, err := auth.New(auth.Config{...})
+	//
+	// ==========================================================================
+	// Option B: Custom User Model (shown below)
+	// ==========================================================================
+	// Use NewWithModel[T] to specify your custom user type.
+	// The custom model is automatically migrated to the database.
+
+	authService, err := auth.NewWithModel[*CustomUser](auth.Config{
 		DatabaseDir:         "./data/tenants",
 		JWTSecret:           []byte("your-super-secret-key-min-32-chars!!"),
 		JWTAccessExpiration: 15 * time.Minute,
@@ -184,12 +212,51 @@ func main() {
 			return c.Status(500).JSON(fiber.Map{"error": "database not available"})
 		}
 
-		var users []auth.User
-		if err := db.Select("id", "email", "name", "role", "created_at").Find(&users).Error; err != nil {
+		// Query custom user model with all fields (including custom ones)
+		var users []CustomUser
+		if err := db.Select("id", "email", "name", "role", "organization_id", "department", "employee_id", "created_at").Find(&users).Error; err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": "failed to fetch users"})
 		}
 
 		return c.JSON(fiber.Map{"users": users})
+	})
+
+	// ==========================================================================
+	// Example: Accessing custom user fields in handlers
+	// ==========================================================================
+	protected.Get("/profile", func(c fiber.Ctx) error {
+		// GetUserAs[T] returns your custom user type with all fields
+		user := auth.GetUserAs[*CustomUser](c)
+		if user == nil {
+			return c.Status(401).JSON(fiber.Map{"error": "unauthorized"})
+		}
+
+		// Access both inherited (BaseUser) and custom fields
+		return c.JSON(fiber.Map{
+			// Inherited fields via interface methods
+			"id":    user.GetID(),
+			"email": user.GetEmail(),
+			"name":  user.GetName(),
+			"role":  user.GetRole(),
+			// Custom fields accessed directly
+			"organization_id": user.OrganizationID,
+			"department":      user.Department,
+			"employee_id":     user.EmployeeID,
+		})
+	})
+
+	// Alternative: Use GetUserModel for interface-only access (works with any user type)
+	protected.Get("/me/summary", func(c fiber.Ctx) error {
+		user := auth.GetUserModel(c)
+		if user == nil {
+			return c.Status(401).JSON(fiber.Map{"error": "unauthorized"})
+		}
+
+		return c.JSON(fiber.Map{
+			"id":    user.GetID(),
+			"email": user.GetEmail(),
+			"role":  user.GetRole(),
+		})
 	})
 
 	// Graceful shutdown
@@ -206,6 +273,7 @@ func main() {
 
 	// Start server
 	log.Println("Starting server on :3000")
+	log.Println("Using CustomUser model with OrganizationID, Department, EmployeeID fields")
 	log.Println("Auth routes registered via RegisterRoutes()")
 	log.Println("Casbin authorization enabled for fine-grained permission control")
 	if err := app.Listen(":3000"); err != nil {
