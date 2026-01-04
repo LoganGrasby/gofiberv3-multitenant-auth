@@ -24,7 +24,7 @@ A comprehensive, multi-tenant authentication and authorization system for Go Fib
 ## Installation
 
 ```bash
-go get github.com/logangrasby/gofiber-auth
+go get github.com/logangrasby/gofiberv3-multitenant-auth
 ```
 
 ## Quick Start
@@ -163,6 +163,15 @@ The `auth.Config` struct controls the behavior of the authentication service.
 | `JWTRefreshExpiration` | `time.Duration` | Lifespan of refresh tokens. | 7d |
 | `AllowTenantCreation` | `bool` | Auto-create DB for new tenants. | `true` |
 | `APIKeyPrefix` | `string` | Prefix for generated API keys. | `"sk_"` |
+| `APIKeyLength` | `int` | Length of generated API keys (bytes). | `32` |
+| `BcryptCost` | `int` | Cost factor for password hashing. | `12` |
+| `CookieSecure` | `bool` | HTTPS only cookies. | `true` |
+| `CookieHTTPOnly` | `bool` | No JS access to cookies. | `true` |
+| `CookieSameSite` | `string` | Cookie SameSite attribute. | `"Lax"` |
+| `GoogleOAuth` | `*OAuthProviderConfig` | Google OAuth configuration. | `nil` |
+| `GitHubOAuth` | `*OAuthProviderConfig` | GitHub OAuth configuration. | `nil` |
+| `OAuthSuccessRedirect` | `string` | Redirect after success. | `"/"` |
+| `OAuthErrorRedirect` | `string` | Redirect after error. | `"/login..."` |
 
 ### Router Config
 
@@ -178,6 +187,8 @@ The `auth.RouterConfig` struct configures route registration:
 | `EnableCasbin` | `bool` | Enable Casbin authorization routes | `false` |
 | `Authorizer` | `*Authorizer` | Required when EnableCasbin is true | `nil` |
 | `AdminRole` | `string` | Role required for admin routes | `"admin"` |
+| `CasbinPolicyPrefix` | `string` | Prefix for policy routes | `"/policies"` |
+| `CasbinRolePrefix` | `string` | Prefix for role routes | `"/roles"` |
 
 ## Handler Groups
 
