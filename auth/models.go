@@ -6,8 +6,53 @@ import (
 	"gorm.io/gorm"
 )
 
-// User represents a user account within a tenant.
-type User struct {
+// UserModel is the interface constraint for user types.
+// Implement this interface to use a custom user model with the auth service.
+// The simplest way is to embed BaseUser in your custom type.
+//
+// Example:
+//
+//	type MyUser struct {
+//	    auth.BaseUser                    // Embed base user
+//	    OrganizationID uint              `gorm:"index" json:"organization_id"`
+//	    AvatarURL      string            `gorm:"size:512" json:"avatar_url"`
+//	}
+type UserModel interface {
+	// GetID returns the user's primary key.
+	GetID() uint
+	// GetEmail returns the user's email address.
+	GetEmail() string
+	// GetPasswordHash returns the hashed password.
+	GetPasswordHash() string
+	// SetPasswordHash sets the hashed password.
+	SetPasswordHash(hash string)
+	// GetName returns the user's display name.
+	GetName() string
+	// GetRole returns the user's role.
+	GetRole() string
+	// SetRole sets the user's role.
+	SetRole(role string)
+	// IsActive returns whether the user account is active.
+	IsActive() bool
+	// SetActive sets the user's active status.
+	SetActive(active bool)
+	// GetLastLoginAt returns the last login timestamp.
+	GetLastLoginAt() *time.Time
+	// SetLastLoginAt sets the last login timestamp.
+	SetLastLoginAt(t *time.Time)
+}
+
+// BaseUser provides the core user fields required for authentication.
+// Embed this in your custom user type to satisfy the UserModel interface.
+//
+// Example:
+//
+//	type MyUser struct {
+//	    auth.BaseUser
+//	    OrganizationID uint   `json:"organization_id"`
+//	    AvatarURL      string `json:"avatar_url"`
+//	}
+type BaseUser struct {
 	ID           uint           `gorm:"primarykey" json:"id"`
 	CreatedAt    time.Time      `json:"created_at"`
 	UpdatedAt    time.Time      `json:"updated_at"`
@@ -21,10 +66,50 @@ type User struct {
 	Metadata     string         `gorm:"type:text" json:"metadata,omitempty"` // JSON string for custom data
 }
 
-// TableName specifies the table name for User.
-func (User) TableName() string {
+// TableName specifies the table name for BaseUser.
+func (BaseUser) TableName() string {
 	return "users"
 }
+
+// GetID returns the user's ID.
+func (u *BaseUser) GetID() uint { return u.ID }
+
+// GetEmail returns the user's email.
+func (u *BaseUser) GetEmail() string { return u.Email }
+
+// GetPasswordHash returns the user's password hash.
+func (u *BaseUser) GetPasswordHash() string { return u.PasswordHash }
+
+// SetPasswordHash sets the user's password hash.
+func (u *BaseUser) SetPasswordHash(hash string) { u.PasswordHash = hash }
+
+// GetName returns the user's name.
+func (u *BaseUser) GetName() string { return u.Name }
+
+// GetRole returns the user's role.
+func (u *BaseUser) GetRole() string { return u.Role }
+
+// SetRole sets the user's role.
+func (u *BaseUser) SetRole(role string) { u.Role = role }
+
+// IsActive returns whether the user is active.
+func (u *BaseUser) IsActive() bool { return u.Active }
+
+// SetActive sets the user's active status.
+func (u *BaseUser) SetActive(active bool) { u.Active = active }
+
+// GetLastLoginAt returns the user's last login time.
+func (u *BaseUser) GetLastLoginAt() *time.Time { return u.LastLoginAt }
+
+// SetLastLoginAt sets the user's last login time.
+func (u *BaseUser) SetLastLoginAt(t *time.Time) { u.LastLoginAt = t }
+
+// User is an alias for BaseUser for backwards compatibility and simple usage.
+// Use this when you don't need to extend the user model.
+type User = BaseUser
+
+// Compile-time check that BaseUser implements UserModel.
+var _ UserModel = (*BaseUser)(nil)
 
 // RefreshToken stores refresh tokens for JWT authentication.
 type RefreshToken struct {

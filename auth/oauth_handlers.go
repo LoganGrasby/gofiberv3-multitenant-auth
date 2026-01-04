@@ -21,7 +21,7 @@ const (
 //
 // Usage: GET /auth/{provider}/redirect
 // Example: GET /auth/google/redirect
-func (s *Service) OAuthRedirectHandler(provider string) fiber.Handler {
+func (s *Service[U]) OAuthRedirectHandler(provider string) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		if !s.IsOAuthConfigured(provider) {
 			return c.Status(fiber.StatusNotImplemented).JSON(fiber.Map{
@@ -66,7 +66,7 @@ func (s *Service) OAuthRedirectHandler(provider string) fiber.Handler {
 //
 // Usage: GET /auth/{provider}/callback
 // Example: GET /auth/google/callback?code=xxx&state=yyy
-func (s *Service) OAuthCallbackHandler(provider string) fiber.Handler {
+func (s *Service[U]) OAuthCallbackHandler(provider string) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		db := GetTenantDB(c)
 		if db == nil {
@@ -189,7 +189,7 @@ func (s *Service) OAuthCallbackHandler(provider string) fiber.Handler {
 }
 
 // oauthError redirects to the error URL with the error message.
-func (s *Service) oauthError(c fiber.Ctx, message string) error {
+func (s *Service[U]) oauthError(c fiber.Ctx, message string) error {
 	redirectURL := s.config.OAuthErrorRedirect
 	if redirectURL == "" {
 		redirectURL = "/login"
@@ -212,7 +212,7 @@ func (s *Service) oauthError(c fiber.Ctx, message string) error {
 //
 // Usage: GET /auth/providers
 // Requires authentication.
-func (s *Service) ListOAuthProvidersHandler() fiber.Handler {
+func (s *Service[U]) ListOAuthProvidersHandler() fiber.Handler {
 	return func(c fiber.Ctx) error {
 		db := GetTenantDB(c)
 		if db == nil {
@@ -266,7 +266,7 @@ func (s *Service) ListOAuthProvidersHandler() fiber.Handler {
 // Usage: DELETE /auth/providers/:provider
 // Example: DELETE /auth/providers/google
 // Requires authentication.
-func (s *Service) UnlinkOAuthProviderHandler() fiber.Handler {
+func (s *Service[U]) UnlinkOAuthProviderHandler() fiber.Handler {
 	return func(c fiber.Ctx) error {
 		db := GetTenantDB(c)
 		if db == nil {
@@ -313,7 +313,7 @@ func (s *Service) UnlinkOAuthProviderHandler() fiber.Handler {
 // Usage: GET /auth/providers/:provider/link
 // Example: GET /auth/providers/github/link
 // Requires authentication.
-func (s *Service) LinkOAuthRedirectHandler(provider string) fiber.Handler {
+func (s *Service[U]) LinkOAuthRedirectHandler(provider string) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		userID := GetUserID(c)
 		if userID == 0 {
@@ -366,7 +366,7 @@ func (s *Service) LinkOAuthRedirectHandler(provider string) fiber.Handler {
 //
 // Usage: GET /auth/providers/:provider/callback
 // Example: GET /auth/providers/github/callback?code=xxx&state=yyy
-func (s *Service) LinkOAuthCallbackHandler(provider string) fiber.Handler {
+func (s *Service[U]) LinkOAuthCallbackHandler(provider string) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		db := GetTenantDB(c)
 		if db == nil {

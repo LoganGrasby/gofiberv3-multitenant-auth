@@ -195,20 +195,18 @@ func (cm *CasbinManager) ClearAll() {
 
 // Authorizer provides Casbin-based authorization for the auth service.
 type Authorizer struct {
-	service       *Service
 	casbinManager *CasbinManager
 	config        CasbinConfig
 }
 
 // NewAuthorizer creates a new Casbin-based authorizer.
-func (s *Service) NewAuthorizer(config CasbinConfig) (*Authorizer, error) {
+func (s *Service[U]) NewAuthorizer(config CasbinConfig) (*Authorizer, error) {
 	cm, err := NewCasbinManager(config)
 	if err != nil {
 		return nil, err
 	}
 
 	return &Authorizer{
-		service:       s,
 		casbinManager: cm,
 		config:        config,
 	}, nil

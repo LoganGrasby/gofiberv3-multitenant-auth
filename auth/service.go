@@ -15,17 +15,56 @@ import (
 	"gorm.io/gorm"
 )
 
-// Service is the main authentication service.
-type Service struct {
+// Service is the main authentication service, generic over the user model type.
+// Use New() for the default User model, or NewWithModel[T]() for a custom model.
+//
+// Example with default User:
+//
+//	svc, err := auth.New(config)
+//
+// Example with custom user model:
+//
+//	type MyUser struct {
+//	    auth.BaseUser
+//	    OrganizationID uint `json:"organization_id"`
+//	}
+//	svc, err := auth.NewWithModel[MyUser](config)
+type Service[U UserModel] struct {
 	config       Config
-	dbManager    *DatabaseManager
+	dbManager    *DatabaseManager[U]
 	HTTPClient   *http.Client
 	sessionStore fiber.Handler
 	authorizer   *Authorizer // cached authorizer instance
+	newUser      func() U    // factory function for creating new user instances
 }
 
-// New creates a new authentication service.
-func New(config Config) (*Service, error) {
+// New creates a new authentication service with the default User model.
+// This is the simplest way to get started - use this if you don't need custom user fields.
+//
+// Example:
+//
+//	svc, err := auth.New(config)
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
+//	defer svc.Close()
+func New(config Config) (*Service[*User], error) {
+	return NewWithModel[*User](config)
+}
+
+// NewWithModel creates a new authentication service with a custom user model.
+// Your user model must implement the UserModel interface, typically by embedding BaseUser.
+//
+// Example:
+//
+//	type MyUser struct {
+//	    auth.BaseUser
+//	    OrganizationID uint   `gorm:"index" json:"organization_id"`
+//	    AvatarURL      string `json:"avatar_url"`
+//	}
+//
+//	svc, err := auth.NewWithModel[*MyUser](config)
+func NewWithModel[U UserModel](config Config) (*Service[U], error) {
 	// Apply defaults
 	if config.JWTAccessExpiration == 0 {
 		config.JWTAccessExpiration = DefaultConfig().JWTAccessExpiration
@@ -52,7 +91,7 @@ func New(config Config) (*Service, error) {
 	}
 
 	// Create database manager
-	dbManager, err := NewDatabaseManager(config)
+	dbManager, err := NewDatabaseManager[U](config)
 	if err != nil {
 		return nil, err
 	}
@@ -66,10 +105,17 @@ func New(config Config) (*Service, error) {
 		CookieDomain:   config.CookieDomain,
 	})
 
-	return &Service{
+	// Create a factory function for new user instances
+	newUser := func() U {
+		var u U
+		return u
+	}
+
+	return &Service[U]{
 		config:       config,
 		dbManager:    dbManager,
 		sessionStore: store,
+		newUser:      newUser,
 		HTTPClient: &http.Client{
 			Timeout: 10 * time.Second,
 		},
@@ -77,23 +123,23 @@ func New(config Config) (*Service, error) {
 }
 
 // Close releases all resources.
-func (s *Service) Close() error {
+func (s *Service[U]) Close() error {
 	return s.dbManager.Close()
 }
 
 // Config returns the service configuration (read-only).
-func (s *Service) Config() Config {
+func (s *Service[U]) Config() Config {
 	return s.config
 }
 
 // SetConfig updates the service configuration.
 // This is primarily used for testing or dynamic configuration updates.
-func (s *Service) SetConfig(config Config) {
+func (s *Service[U]) SetConfig(config Config) {
 	s.config = config
 }
 
 // DatabaseManager returns the database manager.
-func (s *Service) DatabaseManager() *DatabaseManager {
+func (s *Service[U]) DatabaseManager() *DatabaseManager[U] {
 	return s.dbManager
 }
 
@@ -105,7 +151,7 @@ func (s *Service) DatabaseManager() *DatabaseManager {
 //
 //	authorizer, err := authService.Authorizer()
 //	app.Get("/blog", authorizer.RequiresPermissions([]string{"blog:read"}), handler)
-func (s *Service) Authorizer() (*Authorizer, error) {
+func (s *Service[U]) Authorizer() (*Authorizer, error) {
 	if s.authorizer == nil {
 		authorizer, err := s.NewAuthorizer(DefaultCasbinConfig())
 		if err != nil {
@@ -118,7 +164,7 @@ func (s *Service) Authorizer() (*Authorizer, error) {
 
 // SessionMiddleware returns the session middleware handler.
 // This should be registered with the Fiber app before any auth routes.
-func (s *Service) SessionMiddleware() fiber.Handler {
+func (s *Service[U]) SessionMiddleware() fiber.Handler {
 	return s.sessionStore
 }
 
@@ -151,30 +197,33 @@ func (r *RegisterInput) Validate() error {
 }
 
 // Register creates a new user account.
-func (s *Service) Register(ctx context.Context, db *gorm.DB, input RegisterInput) (*User, error) {
+// Returns the created user as the service's user model type.
+func (s *Service[U]) Register(ctx context.Context, db *gorm.DB, input RegisterInput) (U, error) {
+	var zero U
 	if err := input.Validate(); err != nil {
-		return nil, err
+		return zero, err
 	}
 
 	// Normalize email
 	email := strings.ToLower(strings.TrimSpace(input.Email))
 
 	// Check if user already exists
-	var existingUser User
+	var existingUser BaseUser
 	if err := db.Where("email = ?", email).First(&existingUser).Error; err == nil {
-		return nil, ErrUserAlreadyExists
+		return zero, ErrUserAlreadyExists
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, NewAuthError("register", err)
+		return zero, NewAuthError("register", err)
 	}
 
 	// Hash password
 	passwordHash, err := bcrypt.GenerateFromPassword([]byte(input.Password), s.config.BcryptCost)
 	if err != nil {
-		return nil, NewAuthError("register", err)
+		return zero, NewAuthError("register", err)
 	}
 
-	// Create user
-	user := &User{
+	// Create the base user record first
+	// Custom user types embed BaseUser, so this creates the core auth fields
+	baseUser := &BaseUser{
 		Email:        email,
 		PasswordHash: string(passwordHash),
 		Name:         strings.TrimSpace(input.Name),
@@ -182,8 +231,15 @@ func (s *Service) Register(ctx context.Context, db *gorm.DB, input RegisterInput
 		Active:       true,
 	}
 
-	if err := db.Create(user).Error; err != nil {
-		return nil, NewAuthError("register", err)
+	if err := db.Create(baseUser).Error; err != nil {
+		return zero, NewAuthError("register", err)
+	}
+
+	// Fetch the created user as the generic type
+	// This works because U embeds BaseUser and shares the same table
+	var user U
+	if err := db.First(&user, baseUser.ID).Error; err != nil {
+		return zero, NewAuthError("register", err)
 	}
 
 	return user, nil
@@ -206,44 +262,45 @@ type TokenPair struct {
 }
 
 // Login authenticates a user and returns tokens.
-func (s *Service) Login(ctx context.Context, db *gorm.DB, input LoginInput, tenantID string) (*TokenPair, *User, error) {
+func (s *Service[U]) Login(ctx context.Context, db *gorm.DB, input LoginInput, tenantID string) (*TokenPair, U, error) {
+	var zero U
 	email := strings.ToLower(strings.TrimSpace(input.Email))
 
 	// Find user
-	var user User
+	var user U
 	if err := db.Where("email = ? AND active = ?", email, true).First(&user).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, nil, ErrInvalidCredentials
+			return nil, zero, ErrInvalidCredentials
 		}
-		return nil, nil, NewAuthError("login", err)
+		return nil, zero, NewAuthError("login", err)
 	}
 
 	// Verify password
-	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(input.Password)); err != nil {
-		return nil, nil, ErrInvalidCredentials
+	if err := bcrypt.CompareHashAndPassword([]byte(user.GetPasswordHash()), []byte(input.Password)); err != nil {
+		return nil, zero, ErrInvalidCredentials
 	}
 
 	// Generate tokens
-	tokens, err := s.generateTokenPair(ctx, db, &user, tenantID, input.UserAgent, input.IPAddress)
+	tokens, err := s.generateTokenPair(ctx, db, user, tenantID, input.UserAgent, input.IPAddress)
 	if err != nil {
-		return nil, nil, err
+		return nil, zero, err
 	}
 
 	// Update last login
 	now := time.Now()
 	db.Model(&user).Update("last_login_at", now)
 
-	return tokens, &user, nil
+	return tokens, user, nil
 }
 
 // RefreshTokens generates new tokens from a refresh token.
-func (s *Service) RefreshTokens(ctx context.Context, db *gorm.DB, refreshToken string, tenantID string, userAgent string, ipAddress string) (*TokenPair, error) {
+func (s *Service[U]) RefreshTokens(ctx context.Context, db *gorm.DB, refreshToken string, tenantID string, userAgent string, ipAddress string) (*TokenPair, error) {
 	// Hash the provided token
 	tokenHash := HashToken(refreshToken)
 
-	// Find the refresh token
+	// Find the refresh token (without preloading - we'll fetch user separately)
 	var rt RefreshToken
-	if err := db.Preload("User").Where("token_hash = ?", tokenHash).First(&rt).Error; err != nil {
+	if err := db.Where("token_hash = ?", tokenHash).First(&rt).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrInvalidRefreshToken
 		}
@@ -258,8 +315,14 @@ func (s *Service) RefreshTokens(ctx context.Context, db *gorm.DB, refreshToken s
 		return nil, ErrInvalidRefreshToken
 	}
 
+	// Fetch user as generic type
+	var user U
+	if err := db.First(&user, rt.UserID).Error; err != nil {
+		return nil, ErrInvalidRefreshToken
+	}
+
 	// Check user is still active
-	if !rt.User.Active {
+	if !user.IsActive() {
 		return nil, ErrInvalidCredentials
 	}
 
@@ -271,11 +334,11 @@ func (s *Service) RefreshTokens(ctx context.Context, db *gorm.DB, refreshToken s
 	})
 
 	// Generate new tokens
-	return s.generateTokenPair(ctx, db, &rt.User, tenantID, userAgent, ipAddress)
+	return s.generateTokenPair(ctx, db, user, tenantID, userAgent, ipAddress)
 }
 
 // Logout revokes a refresh token.
-func (s *Service) Logout(ctx context.Context, db *gorm.DB, refreshToken string) error {
+func (s *Service[U]) Logout(ctx context.Context, db *gorm.DB, refreshToken string) error {
 	tokenHash := HashToken(refreshToken)
 	now := time.Now()
 
@@ -294,7 +357,7 @@ func (s *Service) Logout(ctx context.Context, db *gorm.DB, refreshToken string) 
 }
 
 // LogoutAll revokes all refresh tokens for a user.
-func (s *Service) LogoutAll(ctx context.Context, db *gorm.DB, userID uint) error {
+func (s *Service[U]) LogoutAll(ctx context.Context, db *gorm.DB, userID uint) error {
 	now := time.Now()
 
 	result := db.Model(&RefreshToken{}).
@@ -312,38 +375,40 @@ func (s *Service) LogoutAll(ctx context.Context, db *gorm.DB, userID uint) error
 }
 
 // GetUserByID retrieves a user by ID.
-func (s *Service) GetUserByID(ctx context.Context, db *gorm.DB, userID uint) (*User, error) {
-	var user User
+func (s *Service[U]) GetUserByID(ctx context.Context, db *gorm.DB, userID uint) (U, error) {
+	var user U
 	if err := db.First(&user, userID).Error; err != nil {
+		var zero U
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, ErrUserNotFound
+			return zero, ErrUserNotFound
 		}
-		return nil, NewAuthError("get_user", err)
+		return zero, NewAuthError("get_user", err)
 	}
-	return &user, nil
+	return user, nil
 }
 
 // GetUserByEmail retrieves a user by email.
-func (s *Service) GetUserByEmail(ctx context.Context, db *gorm.DB, email string) (*User, error) {
-	var user User
+func (s *Service[U]) GetUserByEmail(ctx context.Context, db *gorm.DB, email string) (U, error) {
+	var user U
 	if err := db.Where("email = ?", strings.ToLower(email)).First(&user).Error; err != nil {
+		var zero U
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, ErrUserNotFound
+			return zero, ErrUserNotFound
 		}
-		return nil, NewAuthError("get_user", err)
+		return zero, NewAuthError("get_user", err)
 	}
-	return &user, nil
+	return user, nil
 }
 
 // UpdatePassword changes a user's password.
-func (s *Service) UpdatePassword(ctx context.Context, db *gorm.DB, userID uint, oldPassword, newPassword string) error {
-	var user User
+func (s *Service[U]) UpdatePassword(ctx context.Context, db *gorm.DB, userID uint, oldPassword, newPassword string) error {
+	var user U
 	if err := db.First(&user, userID).Error; err != nil {
 		return ErrUserNotFound
 	}
 
 	// Verify old password
-	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(oldPassword)); err != nil {
+	if err := bcrypt.CompareHashAndPassword([]byte(user.GetPasswordHash()), []byte(oldPassword)); err != nil {
 		return ErrInvalidCredentials
 	}
 
@@ -388,7 +453,7 @@ type CreateAPIKeyOutput struct {
 }
 
 // CreateAPIKey creates a new API key for a user.
-func (s *Service) CreateAPIKey(ctx context.Context, db *gorm.DB, userID uint, input CreateAPIKeyInput) (*CreateAPIKeyOutput, error) {
+func (s *Service[U]) CreateAPIKey(ctx context.Context, db *gorm.DB, userID uint, input CreateAPIKeyInput) (*CreateAPIKeyOutput, error) {
 	if input.Name == "" {
 		return nil, &ErrValidation{Field: "name", Message: "is required"}
 	}
@@ -434,26 +499,34 @@ func (s *Service) CreateAPIKey(ctx context.Context, db *gorm.DB, userID uint, in
 }
 
 // ValidateAPIKey validates an API key and returns the associated user.
-func (s *Service) ValidateAPIKey(ctx context.Context, db *gorm.DB, rawKey string) (*APIKey, *User, error) {
+func (s *Service[U]) ValidateAPIKey(ctx context.Context, db *gorm.DB, rawKey string) (*APIKey, U, error) {
+	var zero U
 	keyHash := HashToken(rawKey)
 
 	var apiKey APIKey
-	if err := db.Preload("User").Where("key_hash = ?", keyHash).First(&apiKey).Error; err != nil {
+	if err := db.Where("key_hash = ?", keyHash).First(&apiKey).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, nil, ErrInvalidAPIKey
+			return nil, zero, ErrInvalidAPIKey
 		}
-		return nil, nil, NewAuthError("validate_api_key", err)
+		return nil, zero, NewAuthError("validate_api_key", err)
 	}
 
 	// Check validity
 	if apiKey.Revoked {
-		return nil, nil, ErrAPIKeyRevoked
+		return nil, zero, ErrAPIKeyRevoked
 	}
 	if apiKey.IsExpired() {
-		return nil, nil, ErrAPIKeyExpired
+		return nil, zero, ErrAPIKeyExpired
 	}
-	if !apiKey.User.Active {
-		return nil, nil, ErrInvalidCredentials
+
+	// Fetch user as generic type
+	var user U
+	if err := db.First(&user, apiKey.UserID).Error; err != nil {
+		return nil, zero, ErrInvalidAPIKey
+	}
+
+	if !user.IsActive() {
+		return nil, zero, ErrInvalidCredentials
 	}
 
 	// Update usage stats
@@ -463,11 +536,11 @@ func (s *Service) ValidateAPIKey(ctx context.Context, db *gorm.DB, rawKey string
 		"usage_count":  gorm.Expr("usage_count + 1"),
 	})
 
-	return &apiKey, &apiKey.User, nil
+	return &apiKey, user, nil
 }
 
 // ListAPIKeys returns all API keys for a user.
-func (s *Service) ListAPIKeys(ctx context.Context, db *gorm.DB, userID uint) ([]APIKey, error) {
+func (s *Service[U]) ListAPIKeys(ctx context.Context, db *gorm.DB, userID uint) ([]APIKey, error) {
 	var keys []APIKey
 	if err := db.Where("user_id = ?", userID).Order("created_at DESC").Find(&keys).Error; err != nil {
 		return nil, NewAuthError("list_api_keys", err)
@@ -476,7 +549,7 @@ func (s *Service) ListAPIKeys(ctx context.Context, db *gorm.DB, userID uint) ([]
 }
 
 // GetAPIKey retrieves an API key by ID.
-func (s *Service) GetAPIKey(ctx context.Context, db *gorm.DB, keyID uint, userID uint) (*APIKey, error) {
+func (s *Service[U]) GetAPIKey(ctx context.Context, db *gorm.DB, keyID uint, userID uint) (*APIKey, error) {
 	var key APIKey
 	if err := db.Where("id = ? AND user_id = ?", keyID, userID).First(&key).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -488,7 +561,7 @@ func (s *Service) GetAPIKey(ctx context.Context, db *gorm.DB, keyID uint, userID
 }
 
 // RevokeAPIKey revokes an API key.
-func (s *Service) RevokeAPIKey(ctx context.Context, db *gorm.DB, keyID uint, userID uint) error {
+func (s *Service[U]) RevokeAPIKey(ctx context.Context, db *gorm.DB, keyID uint, userID uint) error {
 	now := time.Now()
 	result := db.Model(&APIKey{}).
 		Where("id = ? AND user_id = ?", keyID, userID).
@@ -507,7 +580,7 @@ func (s *Service) RevokeAPIKey(ctx context.Context, db *gorm.DB, keyID uint, use
 }
 
 // DeleteAPIKey permanently deletes an API key.
-func (s *Service) DeleteAPIKey(ctx context.Context, db *gorm.DB, keyID uint, userID uint) error {
+func (s *Service[U]) DeleteAPIKey(ctx context.Context, db *gorm.DB, keyID uint, userID uint) error {
 	result := db.Where("id = ? AND user_id = ?", keyID, userID).Delete(&APIKey{})
 	if result.Error != nil {
 		return NewAuthError("delete_api_key", result.Error)
@@ -532,22 +605,28 @@ type Claims struct {
 }
 
 // generateTokenPair creates a new access/refresh token pair.
-func (s *Service) generateTokenPair(ctx context.Context, db *gorm.DB, user *User, tenantID string, userAgent string, ipAddress string) (*TokenPair, error) {
+func (s *Service[U]) generateTokenPair(ctx context.Context, db *gorm.DB, user U, tenantID string, userAgent string, ipAddress string) (*TokenPair, error) {
+	return s.generateTokenPairForUser(ctx, db, user, tenantID, userAgent, ipAddress)
+}
+
+// generateTokenPairForUser creates tokens for any UserModel implementation.
+// This is used internally by OAuth and other methods that work with UserModel interface directly.
+func (s *Service[U]) generateTokenPairForUser(ctx context.Context, db *gorm.DB, user UserModel, tenantID string, userAgent string, ipAddress string) (*TokenPair, error) {
 	now := time.Now()
 	accessExpiry := now.Add(s.config.JWTAccessExpiration)
 
-	// Create access token claims
+	// Create access token claims using the interface methods
 	claims := Claims{
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(accessExpiry),
 			IssuedAt:  jwt.NewNumericDate(now),
 			NotBefore: jwt.NewNumericDate(now),
-			Subject:   fmt.Sprintf("%d", user.ID),
+			Subject:   fmt.Sprintf("%d", user.GetID()),
 		},
-		UserID:   user.ID,
+		UserID:   user.GetID(),
 		TenantID: tenantID,
-		Email:    user.Email,
-		Role:     user.Role,
+		Email:    user.GetEmail(),
+		Role:     user.GetRole(),
 	}
 
 	// Create access token
@@ -566,7 +645,7 @@ func (s *Service) generateTokenPair(ctx context.Context, db *gorm.DB, user *User
 	// Store refresh token
 	refreshExpiry := now.Add(s.config.JWTRefreshExpiration)
 	rt := &RefreshToken{
-		UserID:    user.ID,
+		UserID:    user.GetID(),
 		TokenHash: HashToken(refreshTokenRaw),
 		ExpiresAt: refreshExpiry,
 		UserAgent: userAgent,
@@ -586,7 +665,7 @@ func (s *Service) generateTokenPair(ctx context.Context, db *gorm.DB, user *User
 }
 
 // ValidateAccessToken validates a JWT access token and returns the claims.
-func (s *Service) ValidateAccessToken(tokenString string) (*Claims, error) {
+func (s *Service[U]) ValidateAccessToken(tokenString string) (*Claims, error) {
 	token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])

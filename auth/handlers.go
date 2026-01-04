@@ -9,7 +9,7 @@ import (
 )
 
 // RegisterHandler returns a handler for user registration.
-func (s *Service) RegisterHandler() fiber.Handler {
+func (s *Service[U]) RegisterHandler() fiber.Handler {
 	return func(c fiber.Ctx) error {
 		db := GetTenantDB(c)
 		if db == nil {
@@ -50,16 +50,16 @@ func (s *Service) RegisterHandler() fiber.Handler {
 
 		return c.Status(fiber.StatusCreated).JSON(fiber.Map{
 			"user": fiber.Map{
-				"id":    user.ID,
-				"email": user.Email,
-				"name":  user.Name,
+				"id":    user.GetID(),
+				"email": user.GetEmail(),
+				"name":  user.GetName(),
 			},
 		})
 	}
 }
 
 // LoginHandler returns a handler for user login.
-func (s *Service) LoginHandler() fiber.Handler {
+func (s *Service[U]) LoginHandler() fiber.Handler {
 	return func(c fiber.Ctx) error {
 		db := GetTenantDB(c)
 		if db == nil {
@@ -115,17 +115,17 @@ func (s *Service) LoginHandler() fiber.Handler {
 			"token_type":    tokens.TokenType,
 			"expires_at":    tokens.ExpiresAt,
 			"user": fiber.Map{
-				"id":    user.ID,
-				"email": user.Email,
-				"name":  user.Name,
-				"role":  user.Role,
+				"id":    user.GetID(),
+				"email": user.GetEmail(),
+				"name":  user.GetName(),
+				"role":  user.GetRole(),
 			},
 		})
 	}
 }
 
 // RefreshHandler returns a handler for refreshing tokens.
-func (s *Service) RefreshHandler() fiber.Handler {
+func (s *Service[U]) RefreshHandler() fiber.Handler {
 	return func(c fiber.Ctx) error {
 		db := GetTenantDB(c)
 		if db == nil {
@@ -201,7 +201,7 @@ func (s *Service) RefreshHandler() fiber.Handler {
 }
 
 // LogoutHandler returns a handler for user logout.
-func (s *Service) LogoutHandler() fiber.Handler {
+func (s *Service[U]) LogoutHandler() fiber.Handler {
 	return func(c fiber.Ctx) error {
 		db := GetTenantDB(c)
 		if db == nil {
@@ -242,7 +242,7 @@ func (s *Service) LogoutHandler() fiber.Handler {
 }
 
 // LogoutAllHandler returns a handler for logging out all sessions.
-func (s *Service) LogoutAllHandler() fiber.Handler {
+func (s *Service[U]) LogoutAllHandler() fiber.Handler {
 	return func(c fiber.Ctx) error {
 		db := GetTenantDB(c)
 		if db == nil {
@@ -283,9 +283,9 @@ func (s *Service) LogoutAllHandler() fiber.Handler {
 }
 
 // MeHandler returns a handler that returns the current user's profile.
-func (s *Service) MeHandler() fiber.Handler {
+func (s *Service[U]) MeHandler() fiber.Handler {
 	return func(c fiber.Ctx) error {
-		user := GetUser(c)
+		user := GetUserModel(c)
 		if user == nil {
 			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
 				"error": "authentication required",
@@ -294,12 +294,11 @@ func (s *Service) MeHandler() fiber.Handler {
 
 		return c.JSON(fiber.Map{
 			"user": fiber.Map{
-				"id":            user.ID,
-				"email":         user.Email,
-				"name":          user.Name,
-				"role":          user.Role,
-				"created_at":    user.CreatedAt,
-				"last_login_at": user.LastLoginAt,
+				"id":            user.GetID(),
+				"email":         user.GetEmail(),
+				"name":          user.GetName(),
+				"role":          user.GetRole(),
+				"last_login_at": user.GetLastLoginAt(),
 			},
 			"auth_type": GetAuthType(c),
 		})
@@ -307,7 +306,7 @@ func (s *Service) MeHandler() fiber.Handler {
 }
 
 // ChangePasswordHandler returns a handler for changing the user's password.
-func (s *Service) ChangePasswordHandler() fiber.Handler {
+func (s *Service[U]) ChangePasswordHandler() fiber.Handler {
 	return func(c fiber.Ctx) error {
 		db := GetTenantDB(c)
 		if db == nil {
@@ -357,7 +356,7 @@ func (s *Service) ChangePasswordHandler() fiber.Handler {
 // =============================================================================
 
 // CreateAPIKeyHandler returns a handler for creating API keys.
-func (s *Service) CreateAPIKeyHandler() fiber.Handler {
+func (s *Service[U]) CreateAPIKeyHandler() fiber.Handler {
 	return func(c fiber.Ctx) error {
 		db := GetTenantDB(c)
 		if db == nil {
@@ -416,7 +415,7 @@ func (s *Service) CreateAPIKeyHandler() fiber.Handler {
 }
 
 // ListAPIKeysHandler returns a handler for listing API keys.
-func (s *Service) ListAPIKeysHandler() fiber.Handler {
+func (s *Service[U]) ListAPIKeysHandler() fiber.Handler {
 	return func(c fiber.Ctx) error {
 		db := GetTenantDB(c)
 		if db == nil {
@@ -462,7 +461,7 @@ func (s *Service) ListAPIKeysHandler() fiber.Handler {
 }
 
 // RevokeAPIKeyHandler returns a handler for revoking API keys.
-func (s *Service) RevokeAPIKeyHandler() fiber.Handler {
+func (s *Service[U]) RevokeAPIKeyHandler() fiber.Handler {
 	return func(c fiber.Ctx) error {
 		db := GetTenantDB(c)
 		if db == nil {
@@ -503,7 +502,7 @@ func (s *Service) RevokeAPIKeyHandler() fiber.Handler {
 }
 
 // DeleteAPIKeyHandler returns a handler for deleting API keys.
-func (s *Service) DeleteAPIKeyHandler() fiber.Handler {
+func (s *Service[U]) DeleteAPIKeyHandler() fiber.Handler {
 	return func(c fiber.Ctx) error {
 		db := GetTenantDB(c)
 		if db == nil {

@@ -18,7 +18,7 @@ func TestNewDatabaseManager_CreatesDir(t *testing.T) {
 		AllowTenantCreation: true,
 	}
 
-	dm, err := auth.NewDatabaseManager(config)
+	dm, err := auth.NewDatabaseManager[*auth.User](config)
 	assertNoError(t, err)
 	defer dm.Close()
 
@@ -30,7 +30,7 @@ func TestNewDatabaseManager_CreatesDir(t *testing.T) {
 
 func TestDatabaseManager_GetDB(t *testing.T) {
 	config := setupTestConfig(t)
-	dm, err := auth.NewDatabaseManager(config)
+	dm, err := auth.NewDatabaseManager[*auth.User](config)
 	assertNoError(t, err)
 	defer dm.Close()
 
@@ -58,7 +58,7 @@ func TestDatabaseManager_GetDB(t *testing.T) {
 
 func TestDatabaseManager_GetDB_EmptyTenantID(t *testing.T) {
 	config := setupTestConfig(t)
-	dm, err := auth.NewDatabaseManager(config)
+	dm, err := auth.NewDatabaseManager[*auth.User](config)
 	assertNoError(t, err)
 	defer dm.Close()
 
@@ -70,7 +70,7 @@ func TestDatabaseManager_GetDB_EmptyTenantID(t *testing.T) {
 
 func TestDatabaseManager_GetDB_ClosedManager(t *testing.T) {
 	config := setupTestConfig(t)
-	dm, err := auth.NewDatabaseManager(config)
+	dm, err := auth.NewDatabaseManager[*auth.User](config)
 	assertNoError(t, err)
 
 	// Close the manager
@@ -85,7 +85,7 @@ func TestDatabaseManager_GetDB_ClosedManager(t *testing.T) {
 
 func TestDatabaseManager_TenantExists(t *testing.T) {
 	config := setupTestConfig(t)
-	dm, err := auth.NewDatabaseManager(config)
+	dm, err := auth.NewDatabaseManager[*auth.User](config)
 	assertNoError(t, err)
 	defer dm.Close()
 
@@ -104,7 +104,7 @@ func TestDatabaseManager_TenantExists(t *testing.T) {
 
 func TestDatabaseManager_CreateTenant(t *testing.T) {
 	config := setupTestConfig(t)
-	dm, err := auth.NewDatabaseManager(config)
+	dm, err := auth.NewDatabaseManager[*auth.User](config)
 	assertNoError(t, err)
 	defer dm.Close()
 
@@ -120,7 +120,7 @@ func TestDatabaseManager_CreateTenant(t *testing.T) {
 
 func TestDatabaseManager_CreateTenant_EmptyID(t *testing.T) {
 	config := setupTestConfig(t)
-	dm, err := auth.NewDatabaseManager(config)
+	dm, err := auth.NewDatabaseManager[*auth.User](config)
 	assertNoError(t, err)
 	defer dm.Close()
 
@@ -132,7 +132,7 @@ func TestDatabaseManager_CreateTenant_EmptyID(t *testing.T) {
 
 func TestDatabaseManager_CreateTenant_InvalidID(t *testing.T) {
 	config := setupTestConfig(t)
-	dm, err := auth.NewDatabaseManager(config)
+	dm, err := auth.NewDatabaseManager[*auth.User](config)
 	assertNoError(t, err)
 	defer dm.Close()
 
@@ -158,7 +158,7 @@ func TestDatabaseManager_CreateTenant_InvalidID(t *testing.T) {
 
 func TestDatabaseManager_CreateTenant_AlreadyExists(t *testing.T) {
 	config := setupTestConfig(t)
-	dm, err := auth.NewDatabaseManager(config)
+	dm, err := auth.NewDatabaseManager[*auth.User](config)
 	assertNoError(t, err)
 	defer dm.Close()
 
@@ -177,7 +177,7 @@ func TestDatabaseManager_CreateTenant_AlreadyExists(t *testing.T) {
 
 func TestDatabaseManager_DeleteTenant(t *testing.T) {
 	config := setupTestConfig(t)
-	dm, err := auth.NewDatabaseManager(config)
+	dm, err := auth.NewDatabaseManager[*auth.User](config)
 	assertNoError(t, err)
 	defer dm.Close()
 
@@ -198,7 +198,7 @@ func TestDatabaseManager_DeleteTenant(t *testing.T) {
 
 func TestDatabaseManager_DeleteTenant_NonExistent(t *testing.T) {
 	config := setupTestConfig(t)
-	dm, err := auth.NewDatabaseManager(config)
+	dm, err := auth.NewDatabaseManager[*auth.User](config)
 	assertNoError(t, err)
 	defer dm.Close()
 
@@ -209,7 +209,7 @@ func TestDatabaseManager_DeleteTenant_NonExistent(t *testing.T) {
 
 func TestDatabaseManager_ListTenants(t *testing.T) {
 	config := setupTestConfig(t)
-	dm, err := auth.NewDatabaseManager(config)
+	dm, err := auth.NewDatabaseManager[*auth.User](config)
 	assertNoError(t, err)
 	defer dm.Close()
 
@@ -242,7 +242,7 @@ func TestDatabaseManager_ListTenants(t *testing.T) {
 
 func TestDatabaseManager_Close(t *testing.T) {
 	config := setupTestConfig(t)
-	dm, err := auth.NewDatabaseManager(config)
+	dm, err := auth.NewDatabaseManager[*auth.User](config)
 	assertNoError(t, err)
 
 	ctx := context.Background()
@@ -269,7 +269,7 @@ func TestDatabaseManager_TenantCreationDisabled(t *testing.T) {
 		AllowTenantCreation: false, // Disable auto-creation
 	}
 
-	dm, err := auth.NewDatabaseManager(config)
+	dm, err := auth.NewDatabaseManager[*auth.User](config)
 	assertNoError(t, err)
 	defer dm.Close()
 
