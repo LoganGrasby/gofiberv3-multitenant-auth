@@ -9,9 +9,7 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/extractors"
-	"github.com/gofiber/fiber/v3/middleware/cors"
 	"github.com/gofiber/fiber/v3/middleware/logger"
-	"github.com/gofiber/fiber/v3/middleware/recover"
 
 	"github.com/logangrasby/gofiberv3-multitenant-auth/auth"
 )
@@ -84,13 +82,24 @@ func main() {
 		},
 	})
 
-	// Global middleware
-	app.Use(recover.New())
+	// ==========================================================================
+	// Global Middleware - Two Options
+	// ==========================================================================
+	//
+	// Option A: Let RegisterRoutes apply secure defaults automatically
+	// (see EnableGlobalMiddleware in RouterConfig below)
+	//
+	// Option B: Apply manually for more control (shown here with logger)
+	// auth.ApplyGlobalMiddleware(app) // Applies: recover, requestid, limiter, cors, compress, etag, helmet
+	//
+	// Or with custom config:
+	// auth.ApplyGlobalMiddleware(app, auth.GlobalMiddlewareConfig{
+	//     RateLimitMax: 200,
+	//     AllowedOrigins: []string{"https://myapp.com"},
+	// })
+
+	// Add Fiber's logger middleware for request logging (not included in GlobalMiddleware)
 	app.Use(logger.New())
-	app.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"http://localhost:3000"},
-		AllowCredentials: true,
-	}))
 
 	// Health check (no tenant required)
 	app.Get("/health", func(c fiber.Ctx) error {
@@ -112,9 +121,19 @@ func main() {
 	// - POST /api/api-keys, GET /api/api-keys, etc. (API key management)
 	// - GET  /api/permissions/me, POST /api/permissions/check
 	// - All Casbin policy/role management routes under /api/policies and /api/roles
+	//
+	// EnableGlobalMiddleware applies secure defaults:
+	// - Panic recovery with stack traces (dev only)
+	// - Request ID generation (X-Request-ID header)
+	// - Rate limiting (100 req/min per IP)
+	// - CORS (auto-detects allowed origins from DOMAIN env)
+	// - Response compression
+	// - ETag caching
+	// - Security headers (Helmet: CSP, XSS protection, etc.)
 	authService.RegisterRoutes(app, auth.RouterConfig{
-		Prefix:       "/api",
-		EnableCasbin: true, // Authorizer created automatically
+		Prefix:                 "/api",
+		EnableCasbin:           true, // Authorizer created automatically
+		EnableGlobalMiddleware: true, // Apply secure middleware defaults
 	})
 
 	// ==========================================================================
@@ -274,6 +293,7 @@ func main() {
 	// Start server
 	log.Println("Starting server on :3000")
 	log.Println("Using CustomUser model with OrganizationID, Department, EmployeeID fields")
+	log.Println("Global middleware enabled: recover, requestid, limiter, cors, compress, etag, helmet")
 	log.Println("Auth routes registered via RegisterRoutes()")
 	log.Println("Casbin authorization enabled for fine-grained permission control")
 	if err := app.Listen(":3000"); err != nil {

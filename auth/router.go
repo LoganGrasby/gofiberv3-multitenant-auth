@@ -41,6 +41,15 @@ type RouterConfig struct {
 
 	// AdminRole is the role required to access admin routes (default: "admin").
 	AdminRole string
+
+	// EnableGlobalMiddleware applies security middleware (recover, requestid, limiter,
+	// cors, compress, etag, helmet) to the app before registering routes.
+	// Default: false (to avoid double-applying if user already set up middleware)
+	EnableGlobalMiddleware bool
+
+	// GlobalMiddlewareConfig configures the global middleware stack.
+	// Only used if EnableGlobalMiddleware is true.
+	GlobalMiddlewareConfig *GlobalMiddlewareConfig
 }
 
 // DefaultRouterConfig returns a RouterConfig with sensible defaults.
@@ -107,6 +116,17 @@ func (s *Service[U]) RegisterRoutes(router fiber.Router, configs ...RouterConfig
 	if len(configs) > 0 {
 		cfg = configs[0]
 		cfg.applyDefaults()
+	}
+
+	// Apply global middleware if enabled and router is a *fiber.App
+	if cfg.EnableGlobalMiddleware {
+		if app, ok := router.(*fiber.App); ok {
+			if cfg.GlobalMiddlewareConfig != nil {
+				ApplyGlobalMiddleware(app, *cfg.GlobalMiddlewareConfig)
+			} else {
+				ApplyGlobalMiddleware(app)
+			}
+		}
 	}
 
 	// Create base group with tenant middleware

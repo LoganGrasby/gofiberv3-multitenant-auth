@@ -19,6 +19,7 @@ A comprehensive, multi-tenant authentication and authorization system for Go Fib
   - CSRF protection (via state tokens in OAuth).
   - Secure defaults for cookies (HTTPOnly, Secure, SameSite).
   - JWT Access and Refresh token rotation.
+- **Global Middleware**: Opinionated security middleware stack (recover, rate limiting, CORS, compression, security headers).
 - **Easy Integration**: seamless middleware for Fiber v3.
 
 ## Installation
@@ -61,9 +62,10 @@ func main() {
 	// 2. Create Fiber App
 	app := fiber.New()
 
-	// 3. Register all auth routes with one line!
+	// 3. Register all auth routes with secure middleware defaults!
 	authService.RegisterRoutes(app, auth.RouterConfig{
-		Prefix: "/api",
+		Prefix:                 "/api",
+		EnableGlobalMiddleware: true, // Applies: recover, requestid, limiter, cors, compress, etag, helmet
 	})
 
 	// 4. Start Server
@@ -264,6 +266,79 @@ customUser := auth.GetUserAs[*MyCustomUser](c)
 // Interface access (works with any model)
 userModel := auth.GetUserModel(c)
 email := userModel.GetEmail()
+```
+
+## Global Middleware
+
+The library provides an opinionated security middleware stack that you can apply with zero configuration. This eliminates boilerplate and ensures secure defaults.
+
+### What's Included
+
+| Middleware | Description |
+|------------|-------------|
+| **Recover** | Panic recovery with stack traces (dev mode only) |
+| **Request ID** | Adds unique `X-Request-ID` header for request tracing |
+| **Rate Limiter** | DDoS protection (100 req/min per IP by default) |
+| **CORS** | Cross-origin support (auto-detects from `DOMAIN` env var) |
+| **Compress** | Response compression (gzip, deflate, brotli) |
+| **ETag** | Caching with entity tags |
+| **Helmet** | Security headers (CSP, X-Frame-Options, XSS protection, etc.) |
+
+### Usage
+
+**Option 1: Via RegisterRoutes (Recommended)**
+
+```go
+authService.RegisterRoutes(app, auth.RouterConfig{
+    Prefix:                 "/api",
+    EnableGlobalMiddleware: true,
+})
+```
+
+**Option 2: Manual Application**
+
+```go
+app := fiber.New()
+
+// Apply all global middleware with defaults
+auth.ApplyGlobalMiddleware(app)
+
+// Or with custom configuration
+auth.ApplyGlobalMiddleware(app, auth.GlobalMiddlewareConfig{
+    RateLimitMax:    200,              // 200 requests per minute
+    RateLimitWindow: 30 * time.Second, // 30 second window
+    AllowedOrigins:  []string{"https://myapp.com", "https://api.myapp.com"},
+})
+```
+
+### Environment Detection
+
+The middleware automatically adapts to your environment:
+
+- **Development** (`APP_ENV=dev` or `APP_ENV=development` or unset):
+  - Stack traces enabled in error responses
+  - Localhost origins automatically allowed for CORS
+
+- **Production** (any other `APP_ENV` value):
+  - Stack traces disabled
+  - CORS origins read from `DOMAIN` env var
+
+### Configuration Options
+
+```go
+type GlobalMiddlewareConfig struct {
+    AllowedOrigins          []string      // CORS origins (auto-detect if empty)
+    RateLimitMax            int           // Max requests per window (default: 100)
+    RateLimitWindow         time.Duration // Rate limit window (default: 1 minute)
+    EnableCompress          bool          // Response compression (default: true)
+    EnableETag              bool          // ETag caching (default: true)
+    EnableHelmet            bool          // Security headers (default: true)
+    EnableCSRF              bool          // CSRF protection (default: false)
+    EnableRecover           bool          // Panic recovery (default: true)
+    RecoverEnableStackTrace bool          // Stack traces (default: true in dev)
+    EnableRequestID         bool          // Request ID header (default: true)
+    CORSAllowCredentials    bool          // Allow cookies in CORS (default: true)
+}
 ```
 
 ## Configuration
