@@ -32,7 +32,7 @@ const (
 
 // TenantMiddleware creates middleware that extracts and validates the tenant ID,
 // then attaches the tenant's database connection to the request context.
-func (s *Service) TenantMiddleware() fiber.Handler {
+func (s *Service[U]) TenantMiddleware() fiber.Handler {
 	return func(c fiber.Ctx) error {
 		// Extract tenant ID
 		tenantID, err := s.config.TenantExtractor.Extract(c)
@@ -76,7 +76,7 @@ func (s *Service) TenantMiddleware() fiber.Handler {
 
 // JWTMiddleware creates middleware that validates JWT tokens.
 // It requires TenantMiddleware to be applied first.
-func (s *Service) JWTMiddleware() fiber.Handler {
+func (s *Service[U]) JWTMiddleware() fiber.Handler {
 	return jwtware.New(jwtware.Config{
 		SigningKey: jwtware.SigningKey{
 			Key: s.config.JWTSecret,
@@ -109,18 +109,18 @@ func (s *Service) JWTMiddleware() fiber.Handler {
 			// Get the user from the database to ensure they still exist and are active
 			db := GetTenantDB(c)
 			if db != nil {
-				var user User
+				var user U
 				if err := db.First(&user, claims.UserID).Error; err != nil {
 					return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
 						"error": "user not found",
 					})
 				}
-				if !user.Active {
+				if !user.IsActive() {
 					return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
 						"error": "user account is disabled",
 					})
 				}
-				c.Locals(LocalsUser, &user)
+				c.Locals(LocalsUser, user)
 			}
 
 			// Store auth info
@@ -147,10 +147,11 @@ func (s *Service) JWTMiddleware() fiber.Handler {
 
 // APIKeyMiddleware creates middleware that validates API keys.
 // It requires TenantMiddleware to be applied first.
-func (s *Service) APIKeyMiddleware() fiber.Handler {
+func (s *Service[U]) APIKeyMiddleware() fiber.Handler {
 	// Secure extractor chain: headers only, no query params for API keys
 	apiKeyExtractor := extractors.Chain(
-		extractors.FromAuthHeader("Bearer"), // Standard: "Authorization: Bearer sk_..."
+		extractors.FromAuthHeader("ApiKey"), // Standard: "Authorization: ApiKey sk_..."
+		extractors.FromAuthHeader("Bearer"), // Alternative: "Authorization: Bearer sk_..."
 		extractors.FromHeader("X-API-Key"),  // Alternative: "X-API-Key: sk_..."
 	)
 
@@ -175,12 +176,12 @@ func (s *Service) APIKeyMiddleware() fiber.Handler {
 
 			// Store auth info
 			c.Locals(LocalsUser, user)
-			c.Locals(LocalsUserID, user.ID)
+			c.Locals(LocalsUserID, user.GetID())
 			c.Locals(LocalsAPIKey, apiKey)
 			c.Locals(LocalsAuthType, AuthTypeAPIKey)
 
 			if s.config.OnAuthSuccess != nil {
-				s.config.OnAuthSuccess(c, AuthTypeAPIKey, user.ID)
+				s.config.OnAuthSuccess(c, AuthTypeAPIKey, user.GetID())
 			}
 
 			return true, nil
@@ -210,7 +211,7 @@ func (s *Service) APIKeyMiddleware() fiber.Handler {
 // Security: Uses extractors library for RFC-compliant header parsing:
 //   - JWT: extractors.FromAuthHeader("Bearer") for standard Bearer tokens
 //   - API Key: Secure chain with headers only (no query params)
-func (s *Service) AuthMiddleware() fiber.Handler {
+func (s *Service[U]) AuthMiddleware() fiber.Handler {
 	jwtMiddleware := s.JWTMiddleware()
 	apiKeyMiddleware := s.APIKeyMiddleware()
 
@@ -245,14 +246,14 @@ func (s *Service) AuthMiddleware() fiber.Handler {
 // RequireRole creates middleware that requires the authenticated user to have a specific role.
 func RequireRole(roles ...string) fiber.Handler {
 	return func(c fiber.Ctx) error {
-		user := GetUser(c)
+		user := GetUserModel(c)
 		if user == nil {
 			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
 				"error": "authentication required",
 			})
 		}
 
-		if slices.Contains(roles, user.Role) {
+		if slices.Contains(roles, user.GetRole()) {
 			return c.Next()
 		}
 
@@ -309,12 +310,45 @@ func GetTenantDB(c fiber.Ctx) *gorm.DB {
 	return nil
 }
 
-// GetUser returns the authenticated user from the request context.
+// GetUserModel returns the authenticated user as a UserModel interface from the request context.
+// Use this when you need to access user properties through the interface methods.
+func GetUserModel(c fiber.Ctx) UserModel {
+	if user, ok := c.Locals(LocalsUser).(UserModel); ok {
+		return user
+	}
+	return nil
+}
+
+// GetUser returns the authenticated user as a *User (BaseUser) from the request context.
+// This is a convenience function for when you know you're using the default User model.
+// For custom user models, use GetUserAs[T] instead.
 func GetUser(c fiber.Ctx) *User {
 	if user, ok := c.Locals(LocalsUser).(*User); ok {
 		return user
 	}
 	return nil
+}
+
+// GetUserAs returns the authenticated user cast to the specified type.
+// Use this when you have a custom user model.
+//
+// Example:
+//
+//	type MyUser struct {
+//	    auth.BaseUser
+//	    OrganizationID uint
+//	}
+//
+//	user := auth.GetUserAs[*MyUser](c)
+//	if user != nil {
+//	    fmt.Println(user.OrganizationID)
+//	}
+func GetUserAs[U UserModel](c fiber.Ctx) U {
+	var zero U
+	if user, ok := c.Locals(LocalsUser).(U); ok {
+		return user
+	}
+	return zero
 }
 
 // GetUserID returns the authenticated user's ID from the request context.

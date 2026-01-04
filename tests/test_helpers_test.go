@@ -62,7 +62,7 @@ func setupTestConfig(t *testing.T) auth.Config {
 }
 
 // setupTestService creates a test auth service with an in-memory configuration.
-func setupTestService(t *testing.T) *auth.Service {
+func setupTestService(t *testing.T) *auth.Service[*auth.User] {
 	t.Helper()
 	config := setupTestConfig(t)
 	svc, err := auth.New(config)
@@ -101,7 +101,7 @@ func setupTestDB(t *testing.T) *gorm.DB {
 }
 
 // setupTestServiceWithDB creates a test service and returns a database for a specific tenant.
-func setupTestServiceWithDB(t *testing.T) (*auth.Service, *gorm.DB) {
+func setupTestServiceWithDB(t *testing.T) (*auth.Service[*auth.User], *gorm.DB) {
 	t.Helper()
 	svc := setupTestService(t)
 	db, err := svc.DatabaseManager().GetDB(context.Background(), testTenantID)
@@ -112,7 +112,7 @@ func setupTestServiceWithDB(t *testing.T) (*auth.Service, *gorm.DB) {
 }
 
 // createTestUser creates a user with known credentials in the database.
-func createTestUser(t *testing.T, db *gorm.DB, svc *auth.Service) *auth.User {
+func createTestUser(t *testing.T, db *gorm.DB, svc *auth.Service[*auth.User]) *auth.User {
 	t.Helper()
 	user, err := svc.Register(context.Background(), db, auth.RegisterInput{
 		Email:    testUserEmail,
@@ -126,7 +126,7 @@ func createTestUser(t *testing.T, db *gorm.DB, svc *auth.Service) *auth.User {
 }
 
 // createTestUserWithEmail creates a user with a specific email.
-func createTestUserWithEmail(t *testing.T, db *gorm.DB, svc *auth.Service, email string) *auth.User {
+func createTestUserWithEmail(t *testing.T, db *gorm.DB, svc *auth.Service[*auth.User], email string) *auth.User {
 	t.Helper()
 	user, err := svc.Register(context.Background(), db, auth.RegisterInput{
 		Email:    email,
@@ -140,7 +140,7 @@ func createTestUserWithEmail(t *testing.T, db *gorm.DB, svc *auth.Service, email
 }
 
 // createTestAPIKey creates an API key for a user.
-func createTestAPIKey(t *testing.T, db *gorm.DB, svc *auth.Service, userID uint, name string) (*auth.APIKey, string) {
+func createTestAPIKey(t *testing.T, db *gorm.DB, svc *auth.Service[*auth.User], userID uint, name string) (*auth.APIKey, string) {
 	t.Helper()
 	result, err := svc.CreateAPIKey(context.Background(), db, userID, auth.CreateAPIKeyInput{
 		Name:        name,
@@ -154,7 +154,7 @@ func createTestAPIKey(t *testing.T, db *gorm.DB, svc *auth.Service, userID uint,
 }
 
 // createExpiredAPIKey creates an API key that has already expired.
-func createExpiredAPIKey(t *testing.T, db *gorm.DB, svc *auth.Service, userID uint) (*auth.APIKey, string) {
+func createExpiredAPIKey(t *testing.T, db *gorm.DB, svc *auth.Service[*auth.User], userID uint) (*auth.APIKey, string) {
 	t.Helper()
 	expiry := time.Now().Add(-time.Hour) // Expired 1 hour ago
 	result, err := svc.CreateAPIKey(context.Background(), db, userID, auth.CreateAPIKeyInput{
@@ -168,7 +168,7 @@ func createExpiredAPIKey(t *testing.T, db *gorm.DB, svc *auth.Service, userID ui
 }
 
 // generateTestJWT generates a valid JWT for testing.
-func generateTestJWT(t *testing.T, svc *auth.Service, userID uint, tenantID string) string {
+func generateTestJWT(t *testing.T, svc *auth.Service[*auth.User], userID uint, tenantID string) string {
 	t.Helper()
 	now := time.Now()
 	claims := auth.Claims{
@@ -193,7 +193,7 @@ func generateTestJWT(t *testing.T, svc *auth.Service, userID uint, tenantID stri
 }
 
 // generateExpiredJWT generates an expired JWT for testing.
-func generateExpiredJWT(t *testing.T, svc *auth.Service, userID uint, tenantID string) string {
+func generateExpiredJWT(t *testing.T, svc *auth.Service[*auth.User], userID uint, tenantID string) string {
 	t.Helper()
 	now := time.Now()
 	claims := auth.Claims{
@@ -218,7 +218,7 @@ func generateExpiredJWT(t *testing.T, svc *auth.Service, userID uint, tenantID s
 }
 
 // setupTestApp creates a Fiber app with common middleware for testing.
-func setupTestApp(t *testing.T, svc *auth.Service) *fiber.App {
+func setupTestApp(t *testing.T, svc *auth.Service[*auth.User]) *fiber.App {
 	t.Helper()
 	app := fiber.New(fiber.Config{
 		ErrorHandler: func(c fiber.Ctx, err error) error {
@@ -231,7 +231,7 @@ func setupTestApp(t *testing.T, svc *auth.Service) *fiber.App {
 }
 
 // setupTestAppWithTenant creates a Fiber app with tenant middleware.
-func setupTestAppWithTenant(t *testing.T, svc *auth.Service) *fiber.App {
+func setupTestAppWithTenant(t *testing.T, svc *auth.Service[*auth.User]) *fiber.App {
 	t.Helper()
 	app := setupTestApp(t, svc)
 	app.Use(svc.TenantMiddleware())
@@ -239,7 +239,7 @@ func setupTestAppWithTenant(t *testing.T, svc *auth.Service) *fiber.App {
 }
 
 // setupTestAppWithAuth creates a Fiber app with tenant and auth middleware.
-func setupTestAppWithAuth(t *testing.T, svc *auth.Service) *fiber.App {
+func setupTestAppWithAuth(t *testing.T, svc *auth.Service[*auth.User]) *fiber.App {
 	t.Helper()
 	app := setupTestAppWithTenant(t, svc)
 	app.Use(svc.AuthMiddleware())

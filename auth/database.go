@@ -14,7 +14,8 @@ import (
 )
 
 // DatabaseManager manages per-tenant database connections.
-type DatabaseManager struct {
+// It is generic over the user model type to support custom user models.
+type DatabaseManager[U UserModel] struct {
 	config      Config
 	connections map[string]*gorm.DB
 	mu          sync.RWMutex
@@ -22,13 +23,13 @@ type DatabaseManager struct {
 }
 
 // NewDatabaseManager creates a new database manager.
-func NewDatabaseManager(config Config) (*DatabaseManager, error) {
+func NewDatabaseManager[U UserModel](config Config) (*DatabaseManager[U], error) {
 	// Ensure the database directory exists
 	if err := os.MkdirAll(config.DatabaseDir, 0750); err != nil {
 		return nil, fmt.Errorf("failed to create database directory: %w", err)
 	}
 
-	return &DatabaseManager{
+	return &DatabaseManager[U]{
 		config:      config,
 		connections: make(map[string]*gorm.DB),
 	}, nil
@@ -36,7 +37,7 @@ func NewDatabaseManager(config Config) (*DatabaseManager, error) {
 
 // GetDB returns the database connection for a tenant.
 // If the connection doesn't exist, it creates one.
-func (dm *DatabaseManager) GetDB(ctx context.Context, tenantID string) (*gorm.DB, error) {
+func (dm *DatabaseManager[U]) GetDB(ctx context.Context, tenantID string) (*gorm.DB, error) {
 	if tenantID == "" {
 		return nil, ErrTenantRequired
 	}
@@ -79,7 +80,7 @@ func (dm *DatabaseManager) GetDB(ctx context.Context, tenantID string) (*gorm.DB
 		return nil, fmt.Errorf("failed to open database for tenant %s: %w", tenantID, err)
 	}
 
-	// Run migrations
+	// Run migrations for the generic user type and other models
 	if err := dm.migrate(db); err != nil {
 		return nil, fmt.Errorf("failed to migrate database for tenant %s: %w", tenantID, err)
 	}
@@ -93,14 +94,14 @@ func (dm *DatabaseManager) GetDB(ctx context.Context, tenantID string) (*gorm.DB
 }
 
 // TenantExists checks if a tenant database exists.
-func (dm *DatabaseManager) TenantExists(tenantID string) bool {
+func (dm *DatabaseManager[U]) TenantExists(tenantID string) bool {
 	dbPath := dm.getDBPath(tenantID)
 	_, err := os.Stat(dbPath)
 	return err == nil
 }
 
 // CreateTenant creates a new tenant database.
-func (dm *DatabaseManager) CreateTenant(ctx context.Context, tenantID string) error {
+func (dm *DatabaseManager[U]) CreateTenant(ctx context.Context, tenantID string) error {
 	if tenantID == "" {
 		return ErrTenantRequired
 	}
@@ -122,7 +123,7 @@ func (dm *DatabaseManager) CreateTenant(ctx context.Context, tenantID string) er
 
 // DeleteTenant removes a tenant's database.
 // Warning: This permanently deletes all tenant data!
-func (dm *DatabaseManager) DeleteTenant(ctx context.Context, tenantID string) error {
+func (dm *DatabaseManager[U]) DeleteTenant(ctx context.Context, tenantID string) error {
 	dm.mu.Lock()
 	defer dm.mu.Unlock()
 
@@ -149,7 +150,7 @@ func (dm *DatabaseManager) DeleteTenant(ctx context.Context, tenantID string) er
 }
 
 // ListTenants returns all tenant IDs.
-func (dm *DatabaseManager) ListTenants() ([]string, error) {
+func (dm *DatabaseManager[U]) ListTenants() ([]string, error) {
 	entries, err := os.ReadDir(dm.config.DatabaseDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list tenant databases: %w", err)
@@ -169,7 +170,7 @@ func (dm *DatabaseManager) ListTenants() ([]string, error) {
 }
 
 // Close closes all database connections.
-func (dm *DatabaseManager) Close() error {
+func (dm *DatabaseManager[U]) Close() error {
 	dm.mu.Lock()
 	defer dm.mu.Unlock()
 
@@ -193,12 +194,12 @@ func (dm *DatabaseManager) Close() error {
 }
 
 // getDBPath returns the file path for a tenant's database.
-func (dm *DatabaseManager) getDBPath(tenantID string) string {
+func (dm *DatabaseManager[U]) getDBPath(tenantID string) string {
 	return filepath.Join(dm.config.DatabaseDir, tenantID+".db")
 }
 
 // openConnection opens a new SQLite connection.
-func (dm *DatabaseManager) openConnection(dbPath string) (*gorm.DB, error) {
+func (dm *DatabaseManager[U]) openConnection(dbPath string) (*gorm.DB, error) {
 	// SQLite connection string with recommended settings
 	dsn := fmt.Sprintf("%s?_journal_mode=WAL&_busy_timeout=5000&_synchronous=NORMAL&_cache_size=1000000000&_foreign_keys=true", dbPath)
 
@@ -231,9 +232,20 @@ func (dm *DatabaseManager) openConnection(dbPath string) (*gorm.DB, error) {
 	return db, nil
 }
 
-// migrate runs database migrations.
-func (dm *DatabaseManager) migrate(db *gorm.DB) error {
-	return db.AutoMigrate(AllModels()...)
+// migrate runs database migrations for the user model and other auth models.
+func (dm *DatabaseManager[U]) migrate(db *gorm.DB) error {
+	// Migrate the generic user model first
+	var u U
+	if err := db.AutoMigrate(&u); err != nil {
+		return err
+	}
+	// Migrate the other auth models
+	return db.AutoMigrate(
+		&RefreshToken{},
+		&APIKey{},
+		&OAuthProvider{},
+		&AuditLog{},
+	)
 }
 
 // IsValidTenantID checks if a tenant ID is valid.

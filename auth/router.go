@@ -102,7 +102,7 @@ func (c *RouterConfig) applyDefaults() {
 //	    EnableCasbin: true,
 //	    Authorizer: authorizer,
 //	})
-func (s *Service) RegisterRoutes(router fiber.Router, configs ...RouterConfig) {
+func (s *Service[U]) RegisterRoutes(router fiber.Router, configs ...RouterConfig) {
 	cfg := DefaultRouterConfig()
 	if len(configs) > 0 {
 		cfg = configs[0]
@@ -146,7 +146,7 @@ func (s *Service) RegisterRoutes(router fiber.Router, configs ...RouterConfig) {
 }
 
 // registerAuthRoutes registers the core authentication routes.
-func (s *Service) registerAuthRoutes(router fiber.Router, cfg RouterConfig) {
+func (s *Service[U]) registerAuthRoutes(router fiber.Router, cfg RouterConfig) {
 	auth := router.Group(cfg.AuthPrefix)
 
 	// Public routes
@@ -163,7 +163,7 @@ func (s *Service) registerAuthRoutes(router fiber.Router, cfg RouterConfig) {
 }
 
 // registerOAuthRoutes registers OAuth authentication routes.
-func (s *Service) registerOAuthRoutes(router fiber.Router, cfg RouterConfig) {
+func (s *Service[U]) registerOAuthRoutes(router fiber.Router, cfg RouterConfig) {
 	// OAuth routes need session middleware for CSRF state management
 	auth := router.Group(cfg.AuthPrefix, s.SessionMiddleware())
 
@@ -194,7 +194,7 @@ func (s *Service) registerOAuthRoutes(router fiber.Router, cfg RouterConfig) {
 }
 
 // registerAPIKeyRoutes registers API key management routes.
-func (s *Service) registerAPIKeyRoutes(router fiber.Router, cfg RouterConfig) {
+func (s *Service[U]) registerAPIKeyRoutes(router fiber.Router, cfg RouterConfig) {
 	// API key routes require JWT auth (not API key auth)
 	apiKeys := router.Group(cfg.APIKeyPrefix, s.JWTMiddleware())
 	apiKeys.Post("/", s.CreateAPIKeyHandler())
@@ -204,7 +204,7 @@ func (s *Service) registerAPIKeyRoutes(router fiber.Router, cfg RouterConfig) {
 }
 
 // registerCasbinRoutes registers Casbin authorization routes.
-func (s *Service) registerCasbinRoutes(router fiber.Router, cfg RouterConfig) {
+func (s *Service[U]) registerCasbinRoutes(router fiber.Router, cfg RouterConfig) {
 	authorizer := cfg.Authorizer
 
 	// Protected permission routes
@@ -243,7 +243,7 @@ func (s *Service) registerCasbinRoutes(router fiber.Router, cfg RouterConfig) {
 //	auth := authService.Auth()
 //	app.Post("/custom/register", auth.Register())
 //	app.Post("/custom/login", auth.Login())
-func (s *Service) Auth() *handlers.AuthHandlers {
+func (s *Service[U]) Auth() *handlers.AuthHandlers {
 	return handlers.NewAuthHandlers(s)
 }
 
@@ -254,7 +254,7 @@ func (s *Service) Auth() *handlers.AuthHandlers {
 //	apiKeys := authService.APIKeys()
 //	app.Post("/keys", apiKeys.Create())
 //	app.Get("/keys", apiKeys.List())
-func (s *Service) APIKeys() *handlers.APIKeyHandlers {
+func (s *Service[U]) APIKeys() *handlers.APIKeyHandlers {
 	return handlers.NewAPIKeyHandlers(s)
 }
 
@@ -265,7 +265,7 @@ func (s *Service) APIKeys() *handlers.APIKeyHandlers {
 //	oauth := authService.OAuth()
 //	app.Get("/sso/google", oauth.Redirect("google"))
 //	app.Get("/sso/google/callback", oauth.Callback("google"))
-func (s *Service) OAuth() *handlers.OAuthHandlers {
+func (s *Service[U]) OAuth() *handlers.OAuthHandlers {
 	return handlers.NewOAuthHandlers(s)
 }
 
@@ -295,7 +295,7 @@ type RouteInfo struct {
 
 // Routes returns information about all routes that would be registered.
 // Useful for documentation generation or API introspection.
-func (s *Service) Routes(configs ...RouterConfig) []RouteInfo {
+func (s *Service[U]) Routes(configs ...RouterConfig) []RouteInfo {
 	cfg := DefaultRouterConfig()
 	if len(configs) > 0 {
 		cfg = configs[0]

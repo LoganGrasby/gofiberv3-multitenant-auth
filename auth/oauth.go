@@ -34,7 +34,7 @@ type OAuthLoginResult struct {
 }
 
 // GetOAuthConfig returns the oauth2.Config for the specified provider.
-func (s *Service) GetOAuthConfig(provider string) *oauth2.Config {
+func (s *Service[U]) GetOAuthConfig(provider string) *oauth2.Config {
 	switch provider {
 	case "google":
 		if s.config.GoogleOAuth != nil {
@@ -49,7 +49,7 @@ func (s *Service) GetOAuthConfig(provider string) *oauth2.Config {
 }
 
 // IsOAuthConfigured returns true if the specified OAuth provider is configured.
-func (s *Service) IsOAuthConfigured(provider string) bool {
+func (s *Service[U]) IsOAuthConfigured(provider string) bool {
 	switch provider {
 	case "google":
 		return s.config.GoogleOAuth.IsConfigured()
@@ -60,7 +60,7 @@ func (s *Service) IsOAuthConfigured(provider string) bool {
 }
 
 // GetOAuthAuthURL returns the OAuth authorization URL for the specified provider.
-func (s *Service) GetOAuthAuthURL(provider, state string) (string, error) {
+func (s *Service[U]) GetOAuthAuthURL(provider, state string) (string, error) {
 	cfg := s.GetOAuthConfig(provider)
 	if cfg == nil {
 		return "", ErrOAuthNotConfigured
@@ -69,7 +69,7 @@ func (s *Service) GetOAuthAuthURL(provider, state string) (string, error) {
 }
 
 // ExchangeOAuthCode exchanges an OAuth authorization code for tokens.
-func (s *Service) ExchangeOAuthCode(ctx context.Context, provider, code string) (*oauth2.Token, error) {
+func (s *Service[U]) ExchangeOAuthCode(ctx context.Context, provider, code string) (*oauth2.Token, error) {
 	cfg := s.GetOAuthConfig(provider)
 	if cfg == nil {
 		return nil, ErrOAuthNotConfigured
@@ -87,7 +87,7 @@ func (s *Service) ExchangeOAuthCode(ctx context.Context, provider, code string) 
 
 // FetchOAuthProfile fetches the user's profile from the OAuth provider.
 // FetchOAuthProfile fetches the user's profile from the OAuth provider.
-func (s *Service) FetchOAuthProfile(ctx context.Context, provider string, token *oauth2.Token) (*OAuthProfile, error) {
+func (s *Service[U]) FetchOAuthProfile(ctx context.Context, provider string, token *oauth2.Token) (*OAuthProfile, error) {
 	switch provider {
 	case "google":
 		return s.fetchGoogleProfile(ctx, token)
@@ -100,7 +100,7 @@ func (s *Service) FetchOAuthProfile(ctx context.Context, provider string, token 
 
 // OAuthLogin handles the OAuth login flow after receiving the callback.
 // It finds or creates a user based on the OAuth profile and returns tokens.
-func (s *Service) OAuthLogin(ctx context.Context, db *gorm.DB, profile *OAuthProfile, oauthToken *oauth2.Token, tenantID, userAgent, ipAddress string) (*OAuthLoginResult, error) {
+func (s *Service[U]) OAuthLogin(ctx context.Context, db *gorm.DB, profile *OAuthProfile, oauthToken *oauth2.Token, tenantID, userAgent, ipAddress string) (*OAuthLoginResult, error) {
 	email := strings.ToLower(strings.TrimSpace(profile.Email))
 	if email == "" {
 		return nil, &ErrValidation{Field: "email", Message: "email is required from OAuth provider"}
@@ -173,7 +173,7 @@ func (s *Service) OAuthLogin(ctx context.Context, db *gorm.DB, profile *OAuthPro
 	}
 
 	// Generate tokens
-	tokens, err := s.generateTokenPair(ctx, db, result.User, tenantID, userAgent, ipAddress)
+	tokens, err := s.generateTokenPairForUser(ctx, db, result.User, tenantID, userAgent, ipAddress)
 	if err != nil {
 		return nil, err
 	}
@@ -187,7 +187,7 @@ func (s *Service) OAuthLogin(ctx context.Context, db *gorm.DB, profile *OAuthPro
 }
 
 // createOAuthUser creates a new user from an OAuth profile.
-func (s *Service) createOAuthUser(ctx context.Context, db *gorm.DB, profile *OAuthProfile) (*User, error) {
+func (s *Service[U]) createOAuthUser(ctx context.Context, db *gorm.DB, profile *OAuthProfile) (*User, error) {
 	email := strings.ToLower(strings.TrimSpace(profile.Email))
 
 	user := &User{
@@ -206,7 +206,7 @@ func (s *Service) createOAuthUser(ctx context.Context, db *gorm.DB, profile *OAu
 }
 
 // linkOAuthProvider links an OAuth provider to a user.
-func (s *Service) linkOAuthProvider(ctx context.Context, db *gorm.DB, user *User, profile *OAuthProfile, token *oauth2.Token) error {
+func (s *Service[U]) linkOAuthProvider(ctx context.Context, db *gorm.DB, user *User, profile *OAuthProfile, token *oauth2.Token) error {
 	// Check if this provider is already linked to a different user
 	var existing OAuthProvider
 	err := db.Where("provider = ? AND provider_id = ?", profile.Provider, profile.ProviderID).First(&existing).Error
@@ -232,7 +232,7 @@ func (s *Service) linkOAuthProvider(ctx context.Context, db *gorm.DB, user *User
 }
 
 // updateOAuthProviderTokens updates the OAuth tokens for a provider.
-func (s *Service) updateOAuthProviderTokens(db *gorm.DB, provider *OAuthProvider, token *oauth2.Token) {
+func (s *Service[U]) updateOAuthProviderTokens(db *gorm.DB, provider *OAuthProvider, token *oauth2.Token) {
 	updates := map[string]interface{}{
 		"access_token": token.AccessToken,
 	}
@@ -246,7 +246,7 @@ func (s *Service) updateOAuthProviderTokens(db *gorm.DB, provider *OAuthProvider
 }
 
 // GetUserOAuthProviders returns all OAuth providers linked to a user.
-func (s *Service) GetUserOAuthProviders(ctx context.Context, db *gorm.DB, userID uint) ([]OAuthProvider, error) {
+func (s *Service[U]) GetUserOAuthProviders(ctx context.Context, db *gorm.DB, userID uint) ([]OAuthProvider, error) {
 	var providers []OAuthProvider
 	if err := db.Where("user_id = ?", userID).Find(&providers).Error; err != nil {
 		return nil, NewAuthError("get_oauth_providers", err)
@@ -256,7 +256,7 @@ func (s *Service) GetUserOAuthProviders(ctx context.Context, db *gorm.DB, userID
 
 // UnlinkOAuthProvider removes an OAuth provider from a user.
 // It ensures the user still has at least one way to authenticate.
-func (s *Service) UnlinkOAuthProvider(ctx context.Context, db *gorm.DB, userID uint, provider string) error {
+func (s *Service[U]) UnlinkOAuthProvider(ctx context.Context, db *gorm.DB, userID uint, provider string) error {
 	// First, check if user has a password or other providers
 	var user User
 	if err := db.First(&user, userID).Error; err != nil {
@@ -299,7 +299,7 @@ type GoogleUserInfo struct {
 	Picture       string `json:"picture"`
 }
 
-func (s *Service) fetchGoogleProfile(ctx context.Context, token *oauth2.Token) (*OAuthProfile, error) {
+func (s *Service[U]) fetchGoogleProfile(ctx context.Context, token *oauth2.Token) (*OAuthProfile, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", "https://www.googleapis.com/oauth2/v2/userinfo", nil)
 	if err != nil {
 		return nil, NewAuthError("google_profile", err)
@@ -358,7 +358,7 @@ type GitHubEmail struct {
 	Verified bool   `json:"verified"`
 }
 
-func (s *Service) fetchGitHubProfile(ctx context.Context, token *oauth2.Token) (*OAuthProfile, error) {
+func (s *Service[U]) fetchGitHubProfile(ctx context.Context, token *oauth2.Token) (*OAuthProfile, error) {
 	// Fetch user info
 	req, err := http.NewRequestWithContext(ctx, "GET", "https://api.github.com/user", nil)
 	if err != nil {
@@ -425,7 +425,7 @@ func (s *Service) fetchGitHubProfile(ctx context.Context, token *oauth2.Token) (
 	}, nil
 }
 
-func (s *Service) fetchGitHubPrimaryEmail(ctx context.Context, token *oauth2.Token) (string, error) {
+func (s *Service[U]) fetchGitHubPrimaryEmail(ctx context.Context, token *oauth2.Token) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", "https://api.github.com/user/emails", nil)
 	if err != nil {
 		return "", NewAuthError("github_emails", err)
@@ -470,7 +470,7 @@ func (s *Service) fetchGitHubPrimaryEmail(ctx context.Context, token *oauth2.Tok
 	return "", ErrOAuthEmailNotVerified
 }
 
-func (s *Service) isGitHubEmailVerified(ctx context.Context, token *oauth2.Token, email string) (bool, error) {
+func (s *Service[U]) isGitHubEmailVerified(ctx context.Context, token *oauth2.Token, email string) (bool, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", "https://api.github.com/user/emails", nil)
 	if err != nil {
 		return false, err
