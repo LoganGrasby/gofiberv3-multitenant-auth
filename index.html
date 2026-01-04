@@ -1,0 +1,685 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GoFiber Auth Demo</title>
+    <style>
+        :root {
+            --primary: #4f46e5;
+            --primary-hover: #4338ca;
+            --bg: #f3f4f6;
+            --card-bg: #ffffff;
+            --text: #1f2937;
+            --border: #e5e7eb;
+            --error: #ef4444;
+            --success: #10b981;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            line-height: 1.5;
+            padding: 2rem;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 2rem;
+        }
+
+        .card {
+            background: var(--card-bg);
+            padding: 1.5rem;
+            border-radius: 0.75rem;
+            box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+        }
+
+        h2 {
+            margin-bottom: 1rem;
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: var(--text);
+            border-bottom: 2px solid var(--border);
+            padding-bottom: 0.5rem;
+        }
+
+        .form-group {
+            margin-bottom: 1rem;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-size: 0.875rem;
+            font-weight: 500;
+        }
+
+        input {
+            width: 100%;
+            padding: 0.5rem;
+            border: 1px solid var(--border);
+            border-radius: 0.375rem;
+            font-size: 0.875rem;
+            transition: border-color 0.15s ease-in-out;
+        }
+
+        input:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+        }
+
+        button {
+            background-color: var(--primary);
+            color: white;
+            padding: 0.5rem 1rem;
+            border: none;
+            border-radius: 0.375rem;
+            font-size: 0.875rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background-color 0.15s ease-in-out;
+            width: 100%;
+        }
+
+        button:hover {
+            background-color: var(--primary-hover);
+        }
+
+        button.secondary {
+            background-color: #6b7280;
+        }
+
+        button.secondary:hover {
+            background-color: #4b5563;
+        }
+
+        button.danger {
+            background-color: var(--error);
+        }
+
+        button.danger:hover {
+            background-color: #dc2626;
+        }
+
+        .btn-group {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 0.5rem;
+            margin-top: 1rem;
+        }
+
+        pre {
+            background-color: #111827;
+            color: #e5e7eb;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            overflow-x: auto;
+            font-size: 0.75rem;
+            margin-top: 1rem;
+            max-height: 200px;
+        }
+
+        #status {
+            position: fixed;
+            bottom: 1rem;
+            right: 1rem;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            display: none;
+            animation: slideIn 0.3s ease-out;
+            z-index: 1000;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateY(100%);
+                opacity: 0;
+            }
+
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+
+        .success {
+            background-color: var(--success);
+            color: white;
+        }
+
+        .error {
+            background-color: var(--error);
+            color: white;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        /* Loading Overlay */
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(255, 255, 255, 0.7);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 900;
+        }
+
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid var(--primary);
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+
+        .api-key-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.5rem;
+            border-bottom: 1px solid var(--border);
+            font-size: 0.8rem;
+        }
+
+        .code-block {
+            font-family: monospace;
+            background: #f1f1f1;
+            padding: 2px 4px;
+            border-radius: 3px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="loading-overlay" id="loading">
+        <div class="spinner"></div>
+    </div>
+
+    <!-- Tenant Configuration -->
+    <div style="max-width: 1200px; margin: 0 auto 2rem auto; text-align: right;">
+        <label style="display: inline-block; margin-right: 0.5rem;">Tenant ID/API Key:</label>
+        <input type="text" id="tenant-id" value="default" style="width: 200px; display: inline-block;">
+    </div>
+
+    <div class="container">
+        <!-- Auth Section -->
+        <div class="card">
+            <h2>Authentication</h2>
+
+            <div id="auth-forms">
+                <div class="form-group">
+                    <label>Email</label>
+                    <input type="email" id="auth-email" placeholder="user@example.com">
+                </div>
+                <div class="form-group">
+                    <label>Password</label>
+                    <input type="password" id="auth-password" placeholder="********">
+                </div>
+
+                <div class="btn-group">
+                    <button onclick="register()">Register</button>
+                    <button onclick="login()" class="secondary">Login</button>
+                </div>
+
+                <div style="margin-top: 1rem; border-top: 1px solid var(--border); padding-top: 1rem;">
+                    <p style="text-align: center; margin-bottom: 0.5rem; font-size: 0.8rem; color: #666;">Or login with
+                    </p>
+                    <div class="btn-group">
+                        <button onclick="loginWithProvider('google')" style="background-color: #db4437;">Google</button>
+                        <button onclick="loginWithProvider('github')" style="background-color: #333;">GitHub</button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="auth-status" class="hidden" style="margin-top: 1rem; text-align: center;">
+                <p style="color: var(--success); margin-bottom: 1rem;">Logged In!</p>
+                <div class="btn-group">
+                    <button onclick="logout()">Logout</button>
+                    <button onclick="refreshToken()" class="secondary">Refresh Token</button>
+                    <button onclick="logoutAll()" class="danger" style="grid-column: span 2;">Logout All
+                        Sessions</button>
+                </div>
+            </div>
+
+            <div id="token-display" style="margin-top: 1rem; font-size: 0.7rem; color: #666; word-break: break-all;">
+            </div>
+        </div>
+
+        <!-- Profile Section -->
+        <div class="card">
+            <h2>User Profile</h2>
+            <div class="btn-group" style="margin-bottom: 1rem;">
+                <button onclick="getMe()">Get Profile</button>
+            </div>
+
+            <div id="profile-data" class="hidden">
+                <div class="form-group">
+                    <label>Change Password</label>
+                    <input type="password" id="old-pass" placeholder="Old Password">
+                    <input type="password" id="new-pass" placeholder="New Password" style="margin-top: 0.5rem;">
+                    <button onclick="changePassword()" style="margin-top: 0.5rem;">Update Password</button>
+                </div>
+
+                <div style="margin-top: 1rem; border-top: 1px solid var(--border); padding-top: 1rem;">
+                    <h3>Linked Accounts</h3>
+                    <div id="linked-accounts-list" style="margin-top: 0.5rem; font-size: 0.8rem;"></div>
+                    <div id="available-accounts-list" style="margin-top: 0.5rem;"></div>
+                </div>
+            </div>
+
+            <pre id="profile-result">No data loaded</pre>
+        </div>
+
+        <!-- API Keys Section -->
+        <div class="card">
+            <h2>API Keys</h2>
+            <div class="form-group">
+                <label>New Key Name</label>
+                <input type="text" id="key-name" placeholder="e.g. Development Key">
+                <button onclick="createApiKey()" style="margin-top: 0.5rem;">Create Key</button>
+            </div>
+
+            <button onclick="listApiKeys()" class="secondary">Refresh List</button>
+
+            <div id="api-keys-list" style="margin-top: 1rem;"></div>
+
+            <pre id="new-key-display" class="hidden"
+                style="background: #ecfdf5; color: #065f46; border: 1px solid #10b981;"></pre>
+        </div>
+
+        <!-- Protected Resources -->
+        <div class="card">
+            <h2>Protected Resources</h2>
+            <div style="display: grid; gap: 0.5rem;">
+                <button onclick="testAdmin()">Test Admin API (Role Check)</button>
+                <button onclick="testReports()" class="secondary">Test Reports API (Scope Check)</button>
+                <button onclick="testUsers()">Get All Users (Direct DB)</button>
+            </div>
+
+            <pre id="api-result">Click a button to test...</pre>
+        </div>
+    </div>
+
+    <div id="status"></div>
+
+    <script>
+        const API_URL = 'http://localhost:3000/api';
+        let accessToken = localStorage.getItem('access_token');
+
+        // Initial setup
+        if (accessToken) {
+            document.getElementById('auth-forms').classList.add('hidden');
+            document.getElementById('auth-status').classList.remove('hidden');
+            document.getElementById('token-display').textContent = 'Token active';
+
+            // Checks url params for new login info
+            const urlParams = new URLSearchParams(window.location.search);
+            const token = urlParams.get('access_token');
+            const error = urlParams.get('error');
+            const providerLinked = urlParams.get('provider_linked');
+
+            if (token) {
+                accessToken = token;
+                localStorage.setItem('access_token', accessToken);
+                // Clean URL
+                window.history.replaceState({}, document.title, "/");
+                showStatus('Login successful via OAuth!', 'success');
+                document.getElementById('auth-forms').classList.add('hidden');
+                document.getElementById('auth-status').classList.remove('hidden');
+                document.getElementById('token-display').textContent = 'Token received via OAuth';
+            } else if (error) {
+                showStatus('OAuth Error: ' + urlParams.get('error_description'), 'error');
+                window.history.replaceState({}, document.title, "/");
+            } else if (providerLinked) {
+                showStatus('Provider ' + providerLinked + ' linked successfully!', 'success');
+                window.history.replaceState({}, document.title, "/");
+                getMe(); // Refresh profile
+            }
+        } else {
+            // Check URL params for oauth login even if local storage is empty
+            const urlParams = new URLSearchParams(window.location.search);
+            const token = urlParams.get('access_token');
+            const error = urlParams.get('error');
+
+            if (token) {
+                accessToken = token;
+                localStorage.setItem('access_token', accessToken);
+                document.getElementById('auth-forms').classList.add('hidden');
+                document.getElementById('auth-status').classList.remove('hidden');
+                document.getElementById('token-display').textContent = 'Token received via OAuth';
+                window.history.replaceState({}, document.title, "/");
+                showStatus('Login successful via OAuth!', 'success');
+            } else if (error) {
+                showStatus('OAuth Error: ' + urlParams.get('error_description'), 'error');
+                window.history.replaceState({}, document.title, "/");
+            }
+        }
+
+        // Helpers
+        function getHeaders() {
+            const headers = {
+                'Content-Type': 'application/json',
+                'X-Tenant-ID': document.getElementById('tenant-id').value
+            };
+            if (accessToken) {
+                headers['Authorization'] = `Bearer ${accessToken}`;
+            }
+            return headers;
+        }
+
+        function showStatus(message, type) {
+            const el = document.getElementById('status');
+            el.textContent = message;
+            el.className = type;
+            el.style.display = 'block';
+            setTimeout(() => {
+                el.style.display = 'none';
+            }, 3000);
+        }
+
+        async function fetchAPI(endpoint, options = {}) {
+            document.getElementById('loading').style.display = 'flex';
+            try {
+                const response = await fetch(`${API_URL}${endpoint}`, {
+                    ...options,
+                    headers: {
+                        ...getHeaders(),
+                        ...options.headers
+                    }
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.error || 'Request failed');
+                }
+
+                return data;
+            } catch (error) {
+                showStatus(error.message, 'error');
+                throw error;
+            } finally {
+                document.getElementById('loading').style.display = 'none';
+            }
+        }
+
+        // Auth Functions
+        async function register() {
+            const email = document.getElementById('auth-email').value;
+            const password = document.getElementById('auth-password').value;
+
+            try {
+                await fetchAPI('/auth/register', {
+                    method: 'POST',
+                    body: JSON.stringify({ email, password, role: 'user' }) // Default to user
+                });
+                showStatus('Registration successful! Please login.', 'success');
+            } catch (e) { }
+        }
+
+        async function login() {
+            const email = document.getElementById('auth-email').value;
+            const password = document.getElementById('auth-password').value;
+
+            try {
+                const data = await fetchAPI('/auth/login', {
+                    method: 'POST',
+                    body: JSON.stringify({ email, password })
+                });
+
+                accessToken = data.access_token;
+                localStorage.setItem('access_token', accessToken);
+
+                document.getElementById('auth-forms').classList.add('hidden');
+                document.getElementById('auth-status').classList.remove('hidden');
+                document.getElementById('token-display').textContent = 'Token received';
+                showStatus('Login successful!', 'success');
+            } catch (e) { }
+        }
+
+        function loginWithProvider(provider) {
+            // Redirect to backend
+            window.location.href = `${API_URL}/auth/${provider}/redirect?tenant_id=` + document.getElementById('tenant-id').value;
+        }
+
+        function logout() {
+            // Call logout endpoint if you want, but mainly clear local state
+            fetchAPI('/auth/logout', { method: 'POST' }).finally(() => {
+                accessToken = null;
+                localStorage.removeItem('access_token');
+
+                document.getElementById('auth-forms').classList.remove('hidden');
+                document.getElementById('auth-status').classList.add('hidden');
+                document.getElementById('token-display').textContent = '';
+                document.getElementById('profile-data').classList.add('hidden');
+                document.getElementById('profile-result').textContent = 'No data loaded';
+                showStatus('Logged out', 'success');
+            });
+        }
+
+        async function logoutAll() {
+            try {
+                await fetchAPI('/auth/logout-all', { method: 'POST' });
+                logout(); // Clear local state too
+                showStatus('All sessions invalidated', 'success');
+            } catch (e) { }
+        }
+
+        async function refreshToken() {
+            try {
+                const data = await fetchAPI('/auth/refresh', { method: 'POST' });
+                accessToken = data.access_token;
+                localStorage.setItem('access_token', accessToken);
+                showStatus('Token refreshed', 'success');
+            } catch (e) { }
+        }
+
+        async function changePassword() {
+            const oldPassword = document.getElementById('old-pass').value;
+            const newPassword = document.getElementById('new-pass').value;
+            try {
+                await fetchAPI('/auth/change-password', {
+                    method: 'POST',
+                    body: JSON.stringify({ old_password: oldPassword, new_password: newPassword })
+                });
+                showStatus('Password changed successfully', 'success');
+                document.getElementById('old-pass').value = '';
+                document.getElementById('new-pass').value = '';
+            } catch (e) { }
+        }
+
+        // Linked Accounts
+        async function listProviders() {
+            try {
+                const data = await fetchAPI('/auth/providers');
+
+                const linkedList = document.getElementById('linked-accounts-list');
+                linkedList.innerHTML = '';
+
+                if (data.linked && data.linked.length > 0) {
+                    data.linked.forEach(p => {
+                        const div = document.createElement('div');
+                        div.innerHTML = `
+                            <div style="display: flex; justify-content: space-between; padding: 0.2rem 0; align-items: center;">
+                                <span>${p.provider} (${p.email})</span>
+                                <button onclick="unlinkProvider('${p.provider}')" class="danger" style="width: auto; font-size: 0.7rem; padding: 0.1rem 0.4rem;">Unlink</button>
+                            </div>
+                         `;
+                        linkedList.appendChild(div);
+                    });
+                } else {
+                    linkedList.innerHTML = '<p style="color: #666;">No linked accounts</p>';
+                }
+
+                const availableList = document.getElementById('available-accounts-list');
+                availableList.innerHTML = '';
+
+                // Show link buttons for providers not yet linked (simplified logic: just show all available to link/re-link)
+                if (data.available && data.available.length > 0) {
+                    data.available.forEach(p => {
+                        const hasLinked = data.linked.some(l => l.provider === p.provider);
+                        if (!hasLinked) {
+                            const btn = document.createElement('button');
+                            btn.textContent = `Link ${p.name}`;
+                            btn.className = 'secondary';
+                            btn.style.width = '100%';
+                            btn.style.marginTop = '0.5rem';
+                            btn.onclick = () => linkProvider(p.provider);
+                            availableList.appendChild(btn);
+                        }
+                    });
+                }
+            } catch (e) { }
+        }
+
+        function linkProvider(provider) {
+            window.location.href = `${API_URL}/auth/providers/${provider}/link`;
+        }
+
+        async function unlinkProvider(provider) {
+            if (!confirm(`Are you sure you want to unlink ${provider}?`)) return;
+            try {
+                await fetchAPI(`/auth/providers/${provider}`, { method: 'DELETE' });
+                showStatus('Provider unlinked', 'success');
+                getMe(); // Refresh
+            } catch (e) { }
+        }
+
+        // Feature Functions
+        async function getMe() {
+            try {
+                const data = await fetchAPI('/me');
+                document.getElementById('profile-result').textContent = JSON.stringify(data, null, 2);
+                document.getElementById('profile-data').classList.remove('hidden');
+
+                // Also fetch linked accounts
+                listProviders();
+            } catch (e) {
+                document.getElementById('profile-result').textContent = "Error: " + e.message;
+            }
+        }
+
+        async function testAdmin() {
+            try {
+                const data = await fetchAPI('/admin/stats');
+                document.getElementById('api-result').textContent = JSON.stringify(data, null, 2);
+            } catch (e) {
+                document.getElementById('api-result').textContent = "Access Denied: " + e.message;
+            }
+        }
+
+        async function testReports() {
+            try {
+                const data = await fetchAPI('/reports');
+                document.getElementById('api-result').textContent = JSON.stringify(data, null, 2);
+            } catch (e) {
+                document.getElementById('api-result').textContent = "Access Denied: " + e.message;
+            }
+        }
+
+        async function testUsers() {
+            try {
+                const data = await fetchAPI('/users');
+                document.getElementById('api-result').textContent = JSON.stringify(data, null, 2);
+            } catch (e) {
+                document.getElementById('api-result').textContent = "Error: " + e.message;
+            }
+        }
+
+        // API Keys
+        async function listApiKeys() {
+            try {
+                const data = await fetchAPI('/api-keys/');
+                const list = document.getElementById('api-keys-list');
+                list.innerHTML = '';
+
+                if (data.api_keys) {
+                    data.api_keys.forEach(key => {
+                        const div = document.createElement('div');
+                        div.className = 'api-key-item';
+                        div.innerHTML = `
+                            <div>
+                                <strong>${key.name}</strong>
+                                <div style="font-size: 0.7rem; color: #666">Prefix: ${key.prefix}</div>
+                            </div>
+                            <div>
+                                <button onclick="revokeApiKey('${key.id}')" class="danger" style="font-size: 0.7rem; padding: 0.2rem 0.5rem; width: auto;">Revoke</button>
+                                <button onclick="deleteApiKey('${key.id}')" class="danger" style="font-size: 0.7rem; padding: 0.2rem 0.5rem; width: auto; margin-left: 0.2rem;">Del</button>
+                            </div>
+                        `;
+                        list.appendChild(div);
+                    });
+                } else {
+                    list.innerHTML = '<p style="font-size: 0.8rem; color: #666; text-align: center;">No API keys found</p>';
+                }
+            } catch (e) { }
+        }
+
+        async function createApiKey() {
+            const name = document.getElementById('key-name').value;
+            try {
+                const data = await fetchAPI('/api-keys/', {
+                    method: 'POST',
+                    body: JSON.stringify({ name, scopes: [] })
+                });
+
+                const display = document.getElementById('new-key-display');
+                display.textContent = `NEW KEY: ${data.key}\n(Copy this now, it won't be shown again!)`;
+                display.classList.remove('hidden');
+
+                listApiKeys();
+                document.getElementById('key-name').value = '';
+            } catch (e) { }
+        }
+
+        async function revokeApiKey(id) {
+            try {
+                await fetchAPI(`/api-keys/${id}/revoke`, { method: 'POST' });
+                showStatus('API Key Revoked', 'success');
+                listApiKeys();
+            } catch (e) { }
+        }
+
+        async function deleteApiKey(id) {
+            try {
+                await fetchAPI(`/api-keys/${id}`, { method: 'DELETE' });
+                showStatus('API Key Deleted', 'success');
+                listApiKeys();
+            } catch (e) { }
+        }
+
+    </script>
+</body>
+
+</html>
